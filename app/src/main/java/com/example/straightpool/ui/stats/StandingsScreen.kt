@@ -1,4 +1,4 @@
-package com.example.straightpool.ui.setup
+package com.example.straightpool.ui.stats
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,12 +17,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.straightpool.data.PlayersRepoV2
 import com.example.straightpool.data.RosterPlayer
@@ -34,40 +35,38 @@ fun StandingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
 
     val repo = remember { PlayersRepoV2(ctx) }
-    var players by remember { mutableStateOf<List<RosterPlayer>>(emptyList()) }
+    var roster by remember { mutableStateOf<List<RosterPlayer>>(emptyList()) }
 
     val matches = remember { loadLeagueMatchesFromAssets(ctx) }
 
     LaunchedEffect(Unit) {
-        players = repo.readAll()
-            .filter { !it.isBye } // optional
+        roster = repo.readAll()
+            .filter { !it.isBye }
             .map { pr -> RosterPlayer(playerId = pr.roster, name = pr.name) }
+            .sortedBy { it.playerId }
     }
 
-    val rows = remember(players, matches) {
-        calculateStandings(players, matches)
-    }
+    val rows = remember(roster, matches) { calculateStandings(roster, matches) }
 
     Surface {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Standings", style = MaterialTheme.typography.headlineSmall)
+                Text("Standings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 OutlinedButton(onClick = onBack) { Text("Back") }
             }
 
             Spacer(Modifier.height(12.dp))
 
             Text("Counted matches: ${matches.count { it.isPlayed && it.countsForStandings }}")
+
             Spacer(Modifier.height(12.dp))
 
-            if (players.isEmpty()) {
+            if (roster.isEmpty()) {
                 Text("No players yet. Import players.csv in Admin > Players > Import.")
-                Spacer(Modifier.height(12.dp))
+                return@Surface
             }
 
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-            ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 rows.forEach { r ->
                     ElevatedCard(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp)) {

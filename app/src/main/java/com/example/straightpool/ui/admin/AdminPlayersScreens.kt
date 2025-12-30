@@ -79,11 +79,14 @@ fun AdminPlayersScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val filtered = players.filter {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) true
-        else it.name.lowercase().contains(q) || it.roster.toString().contains(q)
-    }
+    val q = query.trim().lowercase()
+
+    val filtered = players
+        .filter { p ->
+            if (q.isEmpty()) true
+            else p.name.lowercase().contains(q) || p.roster.toString().contains(q)
+        }
+        .sortedWith(compareBy({ it.name.trim().lowercase() }, { it.roster }))
 
     Scaffold { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
