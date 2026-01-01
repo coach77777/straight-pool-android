@@ -103,6 +103,7 @@ data class GameState(
     ),
 
     // Opening/scoring phase
+
     val phase: GamePhase = GamePhase.Opening,
     val breakerIndex: Int = 0,
 
@@ -180,11 +181,27 @@ class ScorerViewModel : ViewModel() {
     fun undo() { if (undoStack.isNotEmpty()) game = undoStack.removeAt(undoStack.lastIndex) }
 
     fun startMatch(
+
         target: Int,
         aId: Int?, aName: String,
         bId: Int?, bName: String,
-        weekKey: String?, weekLabel: String?
+        weekKey: String?, weekLabel: String?,
+        lagWinnerId: Int,
+        winnerBreaks: Boolean
+
     ) {
+        val aRoster = aId
+        val bRoster = bId
+        if (aRoster == null || bRoster == null) return
+
+        val lagWinnerIndex = when (lagWinnerId) {
+            aRoster -> 0
+            bRoster -> 1
+            else -> return // lag winner must be one of the two selected players
+        }
+
+        val breaker = if (winnerBreaks) lagWinnerIndex else 1 - lagWinnerIndex
+
         game = GameState(
             targetScore = target,
             targetLocked = true,
@@ -195,13 +212,13 @@ class ScorerViewModel : ViewModel() {
             weekKey = weekKey,
             weekLabel = weekLabel,
             phase = GamePhase.Opening,
-            breakerIndex = 0,
+            breakerIndex = breaker,
             rackNumber = 1,
             ballsDownInRack = 0,
             rackBallsRemaining = 15,
             rackMode = RackMode.Opening15,
             innings = 1,
-            atTableIndex = 0,
+            atTableIndex = breaker,
             winnerIndex = null,
             postWin = false,
             currentBalls = 0,
@@ -236,6 +253,31 @@ class ScorerViewModel : ViewModel() {
             game.copy(
                 phase = GamePhase.Scoring,
                 atTableIndex = brk,
+                currentBalls = 0,
+                currentFouls = 0,
+                currentBreakFouls = 0
+            ),
+            hadActivity = true
+        )
+    }
+
+    fun openingScratchOnLegalBreak() {
+        pushUndo()
+
+        val brk = game.breakerIndex
+        val opp = (brk + 1) % 2
+        val p = game.players[brk]
+
+        val updatedBreaker = p.copy(
+            score = p.score - 1,
+            foulsInARow = p.foulsInARow + 1
+        )
+
+        game = lockTargetIfNeeded(
+            game.copy(
+                players = game.players.toMutableList().also { it[brk] = updatedBreaker },
+                phase = GamePhase.Scoring,
+                atTableIndex = opp,
                 currentBalls = 0,
                 currentFouls = 0,
                 currentBreakFouls = 0

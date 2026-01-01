@@ -1,6 +1,12 @@
-package com.example.straightpool.data
+package com.example.straightpool.db
 
-data class LeagueMatch(
+import androidx.room.Entity
+
+@Entity(
+    tableName = "league_matches",
+    primaryKeys = ["week", "aRoster", "bRoster"]
+)
+data class MatchEntity(
     val week: Int,
     val dateMmDd: String?,
     val aRoster: Int,
@@ -10,7 +16,6 @@ data class LeagueMatch(
     val status: String,
     val note: String?,
     val countsForStandings: Boolean
-) {
-    val isPlayed: Boolean get() = status.equals("played", ignoreCase = true)
-}
+)
+
 

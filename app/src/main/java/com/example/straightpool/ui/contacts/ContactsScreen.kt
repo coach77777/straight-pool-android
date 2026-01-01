@@ -32,7 +32,7 @@ import com.example.straightpool.data.PlayerRow
 import com.example.straightpool.data.PlayersRepoV2
 
 @Composable
-fun ContactsScreen() {
+fun ContactsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { PlayersRepoV2(ctx) }
 
@@ -77,11 +77,14 @@ fun ContactsScreen() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            Text(
-                text = "Contacts",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = "Contacts",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedButton(onClick = onBack) { Text("Back") }
+            }
 
             Spacer(Modifier.height(12.dp))
 

@@ -1,39 +1,17 @@
 package com.example.straightpool.ui.setup
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.example.straightpool.data.PlayerRow
+import com.example.straightpool.data.MatchScheduleRow
 import com.example.straightpool.data.PlayersRepoV2
-import com.example.straightpool.data.WeekEntry
-import com.example.straightpool.data.loadWeeksFromAssets
+import com.example.straightpool.data.loadMatchScheduleFromAssets
 import com.example.straightpool.scorer.ScorerViewModel
+
+data class WeekEntry(val key: String, val label: String) // key like "Wk-1"
 
 @Composable
 fun SetupScreen(
@@ -47,29 +25,98 @@ fun SetupScreen(
     onBack: () -> Unit
 ) {
     val ctx = LocalContext.current
-    val repo = remember { PlayersRepoV2(ctx) }
+    val playersRepo = remember { PlayersRepoV2(ctx) }
 
-    var roster by remember { mutableStateOf<List<PlayerRow>>(emptyList()) }
+    var roster by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
+    var schedule by remember { mutableStateOf<List<MatchScheduleRow>>(emptyList()) }
     var weeks by remember { mutableStateOf<List<WeekEntry>>(emptyList()) }
 
     var targetStr by remember { mutableStateOf("125") }
-    var aSel by remember { mutableStateOf<Pair<Int?, String>?>(null) }
-    var bSel by remember { mutableStateOf<Pair<Int?, String>?>(null) }
+    var aSel by remember { mutableStateOf<Pair<Int, String>?>(null) } // (roster, "#11 Name")
+    var bSel by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var wSel by remember { mutableStateOf<WeekEntry?>(null) }
 
+    var lagSel by remember { mutableStateOf<Pair<Int, String>?>(null) } // (roster, "#11 Name")
+    var winnerBreaks by remember { mutableStateOf(true) } // true = lag winner breaks
+
+    var matchupWarning by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Unit) {
-        roster = repo.readAll().filter { !it.isBye }
-        weeks = try { loadWeeksFromAssets(ctx) } catch (_: Throwable) { emptyList() }
+        // Load players
+        val rows = try {
+            playersRepo.readAll()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+            .filter { !it.isBye }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.roster }))
+
+        roster = rows.map { it.roster to "#${it.roster}  ${it.name}" }
+
+        // Load schedule
+        schedule = try {
+            loadMatchScheduleFromAssets(ctx, "matches_3.csv")
+        } catch (_: Throwable) {
+            emptyList()
+        }
+
+        // Build Week list from schedule unique weeks
+        weeks = schedule
+            .map { it.week to it.dateLabel }
+            .distinct()
+            .sortedBy { it.first }
+            .map { (wk, date) -> WeekEntry(key = "Wk-$wk", label = date) }
+
         if (wSel == null && weeks.isNotEmpty()) wSel = weeks.first()
     }
 
+    fun findWeekForPair(a: Int, b: Int): WeekEntry? {
+        val row = schedule.firstOrNull { r ->
+            (r.aRoster == a && r.bRoster == b) || (r.aRoster == b && r.bRoster == a)
+        } ?: return null
+
+        return WeekEntry(key = "Wk-${row.week}", label = row.dateLabel)
+    }
+
+    // Auto-fill week when both players are chosen
+    LaunchedEffect(aSel?.first, bSel?.first) {
+        val a = aSel?.first
+        val b = bSel?.first
+        if (a == null || b == null || a == b) {
+            matchupWarning = null
+            return@LaunchedEffect
+        }
+
+        val wk = findWeekForPair(a, b)
+        if (wk != null) {
+            wSel = wk
+            matchupWarning = null
+        } else {
+            matchupWarning = "These two players don’t appear as a scheduled matchup (in matches_3.csv)."
+        }
+    }
+
+    LaunchedEffect(aSel?.first, bSel?.first) {
+        val a = aSel?.first
+        val b = bSel?.first
+        val lag = lagSel?.first
+
+        // if lag winner isn't one of the selected players anymore, clear it
+        if (lag != null && (a == null || b == null || (lag != a && lag != b))) {
+            lagSel = null
+        }
+    }
+
+    // With these (sorted by roster number):
     val rosterForA = remember(roster, bSel) {
-        val bId = bSel?.first
-        roster.filter { it.roster != bId }
+        roster
+            .filter { it.first != bSel?.first }
+            .sortedBy { it.first }
     }
     val rosterForB = remember(roster, aSel) {
-        val aId = aSel?.first
-        roster.filter { it.roster != aId }
+        roster
+            .filter { it.first != aSel?.first }
+            .sortedBy { it.first }
     }
 
     Surface {
@@ -79,10 +126,18 @@ fun SetupScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text("Match Setup", style = MaterialTheme.typography.headlineSmall)
                 OutlinedButton(onClick = onBack) { Text("Back") }
             }
+
+            // Tiny debug counters (remove later)
+            Text("Players loaded: ${roster.size}")
+            Text("Schedule rows: ${schedule.size}")
+            Text("Weeks: ${weeks.size}")
 
             ExposedDropdown(
                 label = "Week / Date",
@@ -93,52 +148,101 @@ fun SetupScreen(
 
             ExposedDropdown(
                 label = "Player A",
-                value = aSel?.let { "#${it.first ?: "-"}  ${it.second}" } ?: "",
-                items = rosterForA.map { it.roster.toString() to "#${it.roster}  ${it.name}" },
+                value = aSel?.second ?: "",
+                items = rosterForA.map { it.first.toString() to it.second },
                 onPick = { key ->
-                    val p = roster.firstOrNull { it.roster.toString() == key }
-                    aSel = (p?.roster to (p?.name ?: "Player A"))
-                    if (p?.roster == bSel?.first) bSel = null
+                    val pick = roster.firstOrNull { it.first.toString() == key }
+                    aSel = pick
+                    if (pick?.first == bSel?.first) bSel = null
                 }
             )
 
             ExposedDropdown(
                 label = "Player B",
-                value = bSel?.let { "#${it.first ?: "-"}  ${it.second}" } ?: "",
-                items = rosterForB.map { it.roster.toString() to "#${it.roster}  ${it.name}" },
+                value = bSel?.second ?: "",
+                items = rosterForB.map { it.first.toString() to it.second },
                 onPick = { key ->
-                    val p = roster.firstOrNull { it.roster.toString() == key }
-                    bSel = (p?.roster to (p?.name ?: "Player B"))
-                    if (p?.roster == aSel?.first) aSel = null
+                    val pick = roster.firstOrNull { it.first.toString() == key }
+                    bSel = pick
+                    if (pick?.first == aSel?.first) aSel = null
                 }
             )
 
+            val lagChoices = remember(aSel, bSel) {
+                listOfNotNull(aSel, bSel).distinctBy { it.first }
+            }
+
+            ExposedDropdown(
+                label = "Lag winner",
+                value = lagSel?.second ?: "",
+                items = lagChoices.map { it.first.toString() to it.second },
+                onPick = { key ->
+                    val pick = lagChoices.firstOrNull { it.first.toString() == key }
+                    lagSel = pick
+                }
+            )
+
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SegmentedButton(
+                    selected = winnerBreaks,
+                    onClick = { winnerBreaks = true },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                ) { Text("Winner breaks") }
+
+                SegmentedButton(
+                    selected = !winnerBreaks,
+                    onClick = { winnerBreaks = false },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                ) { Text("Opponent breaks") }
+            }
+
+
             OutlinedTextField(
                 value = targetStr,
-                onValueChange = { targetStr = it },
+                onValueChange = { targetStr = it.filter(Char::isDigit).take(3) },
                 label = { Text("Target score") },
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(6.dp))
+            if (matchupWarning != null) {
+                Text(matchupWarning!!, color = MaterialTheme.colorScheme.error)
+            }
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 Button(
                     onClick = {
                         val t = targetStr.toIntOrNull() ?: 125
-                        val (aId, aName) = aSel ?: (null to "Player A")
-                        val (bId, bName) = bSel ?: (null to "Player B")
-                        onStart(t, aId, aName, bId, bName, wSel?.key, wSel?.label)
-                    },
-                    enabled = aSel != null && bSel != null
-                ) { Text("Start Match") }
-            }
+                        val a = aSel
+                        val b = bSel
+                        val lag = lagSel
 
-            if (roster.isEmpty()) {
-                Text("No players yet. Import players.csv in Admin > Players > Import.")
-            }
-            if (weeks.isEmpty()) {
-                Text("No weeks yet. Add weeks.csv to assets (for now).")
+                        if (a == null || b == null || lag == null) return@Button
+
+                        val aName = a.second.substringAfter("  ").trim()
+                        val bName = b.second.substringAfter("  ").trim()
+
+                        vm.startMatch(
+                            target = t,
+                            aId = a.first, aName = aName,
+                            bId = b.first, bName = bName,
+                            weekKey = wSel?.key, weekLabel = wSel?.label,
+                            lagWinnerId = lag.first,
+                            winnerBreaks = winnerBreaks
+                        )
+
+                        // optional: navigate to break screen if your flow needs it
+                        onStart(t, a.first, aName, b.first, bName, wSel?.key, wSel?.label)
+                    },
+                    enabled = (aSel != null && bSel != null && lagSel != null && matchupWarning == null)
+                ) {
+                    Text("Start Match")
+                }
+
             }
         }
     }
@@ -165,19 +269,17 @@ private fun ExposedDropdown(
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                .menuAnchor()
                 .fillMaxWidth()
         )
 
-        // Material3 1.3.x: Use DropdownMenu here (NOT ExposedDropdownMenu)
-        DropdownMenu(
+        ExposedDropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.exposedDropdownSize()
+            onDismissRequest = { expanded = false }
         ) {
-            items.forEach { (key, labelText) ->
+            items.forEach { (key, text) ->
                 DropdownMenuItem(
-                    text = { Text(labelText) },
+                    text = { Text(text) },
                     onClick = {
                         onPick(key)
                         expanded = false

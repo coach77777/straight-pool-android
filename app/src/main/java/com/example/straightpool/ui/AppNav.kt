@@ -20,6 +20,10 @@ import com.example.straightpool.ui.help.HelpSpottingScreen
 import com.example.straightpool.ui.setup.SetupScreen
 import com.example.straightpool.ui.start.StartScreen
 import com.example.straightpool.ui.stats.StandingsScreen
+import com.example.straightpool.ui.stats.PlayerStatsScreen
+import com.example.straightpool.ui.admin.AdminPlayerMatchesScreen
+import com.example.straightpool.ui.admin.AdminPlayerMatchesScreen
+import com.example.straightpool.ui.admin.AdminEditMatchScreen
 
 @Composable
 fun AppNav(vm: ScorerViewModel) {
@@ -37,23 +41,28 @@ fun AppNav(vm: ScorerViewModel) {
         }
 
         composable("contacts") {
-            ContactsScreen()
+            ContactsScreen(onBack = { nav.popBackStack() })
         }
 
         composable("stats") {
-            StandingsScreen(onBack = { nav.popBackStack() })
+            StandingsScreen(
+                onBack = { nav.popBackStack() },
+                onPlayerClick = { roster -> nav.navigate("stats_player/$roster") }
+            )
+        }
+
+        composable("stats_player/{roster}") { backStack ->
+            val roster = backStack.arguments?.getString("roster")?.toIntOrNull() ?: 0
+            PlayerStatsScreen(
+                roster = roster,
+                onBack = { nav.popBackStack() }
+            )
         }
 
         composable("setup") {
             SetupScreen(
                 vm = vm,
                 onStart = { target, aId, aName, bId, bName, weekKey, weekLabel ->
-                    vm.startMatch(
-                        target = target,
-                        aId = aId, aName = aName,
-                        bId = bId, bName = bName,
-                        weekKey = weekKey, weekLabel = weekLabel
-                    )
                     nav.navigate("break") { popUpTo("setup") { inclusive = true } }
                 },
                 onBack = { nav.popBackStack() }
@@ -92,7 +101,11 @@ fun AppNav(vm: ScorerViewModel) {
             AdminGateScreen(
                 appName = "StraightPool",
                 defaultPasscode = "7777",
-                onSuccess = { nav.navigate("admin_menu") },
+                onSuccess = {
+                    nav.navigate("admin_menu") {
+                        popUpTo("admin") { inclusive = true }
+                    }
+                },
                 onBack = { nav.popBackStack() }
             )
         }
@@ -104,14 +117,44 @@ fun AppNav(vm: ScorerViewModel) {
                 onAdminSettings = { nav.navigate("admin_settings") },
                 onPlayers = { nav.navigate("admin_players") },
                 onSchedule = { nav.navigate("admin_schedule") },
-                onFixMatchResults = { nav.navigate("admin_fix_results") },
-                onPlayerStats = { nav.navigate("admin_player_stats") },
+                onAdminStats = { nav.navigate("admin_stats") },
                 onImportMatches = { nav.navigate("admin_import_matches") }
             )
         }
 
         composable("admin_settings") {
             AdminSettingsScreen(onBack = { nav.popBackStack() })
+        }
+
+        composable("admin_stats") {
+            StandingsScreen(
+                onBack = { nav.popBackStack() },
+                onPlayerClick = { roster -> nav.navigate("admin_stats_player/$roster") }
+            )
+        }
+
+        composable("admin_stats_player/{roster}") { backStack ->
+            val roster = backStack.arguments?.getString("roster")?.toIntOrNull() ?: 0
+            AdminPlayerMatchesScreen(
+                roster = roster,
+                onBack = { nav.popBackStack() },
+                onEditMatch = { week, aRoster, bRoster ->
+                    nav.navigate("admin_edit_match/$week/$aRoster/$bRoster")
+                }
+            )
+        }
+
+        composable("admin_edit_match/{week}/{aRoster}/{bRoster}") { backStack ->
+            val week = backStack.arguments?.getString("week")?.toIntOrNull() ?: 0
+            val aRoster = backStack.arguments?.getString("aRoster")?.toIntOrNull() ?: 0
+            val bRoster = backStack.arguments?.getString("bRoster")?.toIntOrNull() ?: 0
+
+            AdminEditMatchScreen(
+                week = week,
+                aRoster = aRoster,
+                bRoster = bRoster,
+                onBack = { nav.popBackStack() }
+            )
         }
 
         composable("admin_players") {
@@ -145,8 +188,6 @@ fun AppNav(vm: ScorerViewModel) {
 
         // Admin stubs so menu clicks don’t crash
         composable("admin_schedule") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
-        composable("admin_fix_results") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
-        composable("admin_player_stats") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
         composable("admin_import_matches") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
     }
 }

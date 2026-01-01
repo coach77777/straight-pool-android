@@ -43,6 +43,13 @@ fun BreakIntroScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Legal break (called ball)") }
 
+                    Button(
+                        onClick = { vm.openingScratchOnLegalBreak() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Scratch on legal break (−1)")
+                    }
+
                     // 3) Breaking foul −2 → opponent chooses accept/rerack
                     OutlinedButton(
                         onClick = { vm.openingBreakFoul() },

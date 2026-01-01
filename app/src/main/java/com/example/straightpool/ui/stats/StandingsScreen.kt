@@ -27,17 +27,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.straightpool.data.PlayersRepoV2
 import com.example.straightpool.data.RosterPlayer
-import com.example.straightpool.data.loadLeagueMatchesFromAssets
+import androidx.compose.foundation.clickable
 import com.example.straightpool.standings.calculateStandings
 
 @Composable
-fun StandingsScreen(onBack: () -> Unit) {
+fun StandingsScreen(
+    onBack: () -> Unit,
+    onPlayerClick: (Int) -> Unit = {}
+) {
     val ctx = LocalContext.current
 
     val repo = remember { PlayersRepoV2(ctx) }
     var roster by remember { mutableStateOf<List<RosterPlayer>>(emptyList()) }
 
-    val matches = remember { loadLeagueMatchesFromAssets(ctx) }
+    val matchesRepo = remember { com.example.straightpool.data.MatchesRepository(ctx) }
+    var matches by remember { mutableStateOf<List<com.example.straightpool.data.LeagueMatch>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        matchesRepo.ensureSeededFromAssets("matches_3.csv")
+        matches = matchesRepo.getAll()
+    }
 
     LaunchedEffect(Unit) {
         roster = repo.readAll()
@@ -68,12 +77,20 @@ fun StandingsScreen(onBack: () -> Unit) {
 
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 rows.forEach { r ->
-                    ElevatedCard(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                            .clickable {
+                                android.util.Log.d("StandingsR", "Clicked roster=${r.roster}")
+                                onPlayerClick(r.roster)
+                            }
+                    ) {
                         Column(Modifier.fillMaxWidth().padding(12.dp)) {
                             Text("${r.roster}. ${r.name}", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(6.dp))
                             Text("W: ${r.wins}  L: ${r.losses}  GP: ${r.played}")
-                            Text("PF: ${r.pointsFor}  PA: ${r.pointsAgainst}")
+
                         }
                     }
                 }

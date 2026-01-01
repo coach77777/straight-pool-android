@@ -19,8 +19,7 @@ fun AdminMenuScreen(
     onAdminSettings: () -> Unit,
     onPlayers: () -> Unit,
     onSchedule: () -> Unit,
-    onFixMatchResults: () -> Unit,
-    onPlayerStats: () -> Unit,
+    onAdminStats: () -> Unit,
     onImportMatches: () -> Unit,
 ) {
     Surface {
@@ -39,8 +38,7 @@ fun AdminMenuScreen(
             AdminRow("Admin Settings", onAdminSettings)
             AdminRow("Players", onPlayers)
             AdminRow("Schedule", onSchedule)
-            AdminRow("Fix Match Results", onFixMatchResults)
-            AdminRow("Player Stats", onPlayerStats)
+            AdminRow("Stats (Edit Matches)", onAdminStats)
             AdminRow("Import Matches", onImportMatches)
         }
     }
