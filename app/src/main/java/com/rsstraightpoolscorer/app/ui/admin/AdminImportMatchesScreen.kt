@@ -34,6 +34,8 @@ import com.rsstraightpoolscorer.app.db.MatchEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.rsstraightpoolscorer.app.net.RemoteCsvDownloader
+import com.rsstraightpoolscorer.app.net.RemoteCsvLinks
 
 @Composable
 fun AdminImportMatchesScreen(
@@ -109,6 +111,53 @@ fun AdminImportMatchesScreen(
                     "Choose a CSV file with header:\n" +
                             "week,dateMmDd,aRoster,bRoster,aScore,bScore,status,note,countsForStandings"
                 )
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                snackbarHostState.showSnackbar(
+                                    "Downloading matches_3.csv…",
+                                    duration = SnackbarDuration.Short
+                                )
+
+                                val text = RemoteCsvDownloader.downloadText(
+                                    context = ctx,
+                                    url = RemoteCsvLinks.MATCHES_3,
+                                    filename = "remote/matches_3.csv"
+                                )
+
+                                val parsed = parseMatchesCsv(text)
+                                if (parsed.isEmpty()) {
+                                    snackbarHostState.showSnackbar(
+                                        "Downloaded file but no rows imported (check format).",
+                                        duration = SnackbarDuration.Long
+                                    )
+                                    return@launch
+                                }
+
+                                val dao = db(ctx).matchDao()
+                                withContext(Dispatchers.IO) {
+                                    dao.upsertAll(parsed)
+                                }
+
+                                val msg = "Downloaded + imported ${parsed.size} matches"
+                                lastSummary = msg
+                                snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Short)
+
+                                onBack()
+                            } catch (e: Exception) {
+                                Log.e("AdminImportMatches", "Download/import failed", e)
+                                snackbarHostState.showSnackbar(
+                                    "Download/import failed: ${e.message}",
+                                    duration = SnackbarDuration.Long
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Download & Import matches_3.csv") }
+
 
                 Button(
                     onClick = { picker.launch(arrayOf("text/*", "text/csv", "application/csv")) },

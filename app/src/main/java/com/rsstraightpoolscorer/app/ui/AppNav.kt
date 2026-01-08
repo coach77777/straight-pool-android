@@ -30,6 +30,17 @@ import com.rsstraightpoolscorer.app.ui.admin.AdminImportMatchesScreen
 fun AppNav(vm: ScorerViewModel) {
     val nav = rememberNavController()
 
+    // Put it HERE (inside AppNav, before NavHost)
+    val goBackOrStart: () -> Unit = {
+        val ok = nav.popBackStack()
+        if (!ok) {
+            nav.navigate("start") {
+                launchSingleTop = true
+                popUpTo("start") { inclusive = false }
+            }
+        }
+    }
+
     NavHost(navController = nav, startDestination = "start") {
 
         composable("start") {
@@ -42,12 +53,12 @@ fun AppNav(vm: ScorerViewModel) {
         }
 
         composable("contacts") {
-            ContactsScreen(onBack = { nav.popBackStack() })
+            ContactsScreen(onBack = goBackOrStart)
         }
 
         composable("stats") {
             StandingsScreen(
-                onBack = { nav.popBackStack() },
+                onBack = goBackOrStart,
                 onPlayerClick = { roster -> nav.navigate("stats_player/$roster") }
             )
         }
@@ -56,7 +67,7 @@ fun AppNav(vm: ScorerViewModel) {
             val roster = backStack.arguments?.getString("roster")?.toIntOrNull() ?: 0
             PlayerStatsScreen(
                 roster = roster,
-                onBack = { nav.popBackStack() }
+                onBack = goBackOrStart,
             )
         }
 
@@ -66,7 +77,7 @@ fun AppNav(vm: ScorerViewModel) {
                 onStart = { target, aId, aName, bId, bName, weekKey, weekLabel ->
                     nav.navigate("break") { popUpTo("setup") { inclusive = true } }
                 },
-                onBack = { nav.popBackStack() }
+                onBack = goBackOrStart,
             )
         }
 
@@ -76,25 +87,25 @@ fun AppNav(vm: ScorerViewModel) {
                 onStart = {
                     nav.navigate("scorer") { popUpTo("break") { inclusive = true } }
                 },
-                onBack = { nav.popBackStack() }
+                onBack = goBackOrStart
             )
         }
 
         composable("scorer") {
             ScorerV2Screen(
                 vm = vm,
-                onBack = { nav.popBackStack() },
+                onBack = goBackOrStart,
                 onHelp = { nav.navigate("help") },
                 onHistory = { nav.navigate("match_history") }
             )
         }
 
         composable("match_history") {
-            MatchHistoryScreen(onBack = { nav.popBackStack() })
+            MatchHistoryScreen(onBack = goBackOrStart)
         }
 
         composable("help") {
-            HelpSpottingScreen(onBack = { nav.popBackStack() })
+            HelpSpottingScreen(onBack = goBackOrStart)
         }
 
         // ADMIN gate (passcode)
@@ -114,20 +125,23 @@ fun AppNav(vm: ScorerViewModel) {
         // ADMIN menu
         composable("admin_menu") {
             AdminMenuScreen(
-                onBack = { nav.popBackStack() },
+                onBack = {
+                    nav.navigate("start") {
+                        popUpTo("start") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
                 onAdminSettings = { nav.navigate("admin_settings") },
                 onPlayers = { nav.navigate("admin_players") },
                 onSchedule = { nav.navigate("admin_schedule") },
                 onAdminStats = { nav.navigate("admin_stats") },
                 onImportMatches = { nav.navigate("admin_import_matches") },
                 onExports = { nav.navigate("admin_exports") }
-
-
             )
         }
 
         composable("admin_settings") {
-            AdminSettingsScreen(onBack = { nav.popBackStack() })
+            AdminSettingsScreen(onBack = goBackOrStart)
         }
 
         composable("admin_stats") {
@@ -163,7 +177,7 @@ fun AppNav(vm: ScorerViewModel) {
 
         composable("admin_players") {
             AdminPlayersScreen(
-                onBack = { nav.popBackStack() },
+                onBack = goBackOrStart,
                 onEditPlayer = { roster -> nav.navigate("admin_player_edit/$roster") },
                 onAddPlayer = {
                     // placeholder until we make a real Add screen
@@ -178,23 +192,23 @@ fun AppNav(vm: ScorerViewModel) {
             val roster = backStack.arguments?.getString("roster")?.toIntOrNull() ?: 0
             AdminEditPlayerScreen(
                 roster = roster,
-                onBack = { nav.popBackStack() }
+                onBack = goBackOrStart
             )
         }
 
         composable("admin_players_import") {
-            AdminImportPlayersScreen(onBack = { nav.popBackStack() })
+            AdminImportPlayersScreen (onBack = goBackOrStart)
         }
 
         composable("admin_players_export") {
-            AdminExportPlayersScreen(onBack = { nav.popBackStack() })
+            AdminExportPlayersScreen(onBack = goBackOrStart)
         }
         composable("admin_exports") {
-            AdminExportsScreen(onBack = { nav.popBackStack() })
+            AdminExportsScreen(onBack = goBackOrStart)
         }
 
         composable("admin_import_matches") {
-            AdminImportPlayersScreen(onBack = { nav.popBackStack() })
+            AdminImportMatchesScreen(onBack = goBackOrStart)
         }
 
         // Admin stubs so menu clicks don’t crash

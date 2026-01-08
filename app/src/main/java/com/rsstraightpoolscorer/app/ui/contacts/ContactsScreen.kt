@@ -1,5 +1,6 @@
 package com.rsstraightpoolscorer.app.ui.contacts
 
+import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,8 @@ import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 
 @Composable
 fun ContactsScreen(onBack: () -> Unit) {
+    BackHandler { onBack() }
+
     val ctx = LocalContext.current
     val repo = remember { PlayersRepoV2(ctx) }
 
@@ -49,8 +52,7 @@ fun ContactsScreen(onBack: () -> Unit) {
 
     val q = query.trim().lowercase()
     val filtered = players.filter { p ->
-        if (q.isEmpty()) true
-        else p.name.lowercase().contains(q) || p.roster.toString().contains(q)
+        q.isEmpty() || p.name.lowercase().contains(q) || p.roster.toString().contains(q)
     }
 
     fun dial(phone: String) {
@@ -128,9 +130,14 @@ private fun ContactCard(
     onEmail: () -> Unit
 ) {
     Surface(tonalElevation = 1.dp) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
-                text = if (p.isBye) "${p.name} (BYE)" else p.name,
+                text = p.name,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -138,19 +145,19 @@ private fun ContactCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = onCall,
-                    enabled = !p.phone.isNullOrBlank() && !p.isBye,
+                    enabled = !p.phone.isNullOrBlank(),
                     modifier = Modifier.weight(1f)
                 ) { Text("Call") }
 
                 OutlinedButton(
                     onClick = onText,
-                    enabled = !p.phone.isNullOrBlank() && !p.isBye,
+                    enabled = !p.phone.isNullOrBlank(),
                     modifier = Modifier.weight(1f)
                 ) { Text("Text") }
 
                 Button(
                     onClick = onEmail,
-                    enabled = !p.email.isNullOrBlank() && !p.isBye,
+                    enabled = !p.email.isNullOrBlank(),
                     modifier = Modifier.weight(1f)
                 ) { Text("Email") }
             }

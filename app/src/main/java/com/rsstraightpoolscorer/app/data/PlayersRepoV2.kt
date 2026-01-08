@@ -24,7 +24,7 @@ class PlayersRepoV2(private val ctx: Context) {
         if (!file.exists()) return emptyList()
 
         val lines = file.readLines()
-        if (lines.isEmpty()) return emptyList()
+        if (lines.size <= 1) return emptyList()
 
         return lines
             .drop(1)
@@ -46,15 +46,13 @@ class PlayersRepoV2(private val ctx: Context) {
     }
 
     fun delete(roster: Int) {
-        val rows = readAll().filterNot { it.roster == roster }
-        replaceAll(rows)
+        replaceAll(readAll().filterNot { it.roster == roster })
     }
 
     fun clearAll() {
         replaceAll(emptyList())
     }
 
-    // IMPORTANT: Public method that overwrites the file
     fun replaceAll(rows: List<PlayerRow>) {
         val out = buildString {
             append(header()).append("\n")
@@ -73,14 +71,14 @@ class PlayersRepoV2(private val ctx: Context) {
             .map { it.trimEnd() }
             .filter { it.isNotBlank() }
 
-        if (lines.isEmpty()) return 0
+        if (lines.size <= 1) return 0
 
         val hdr = splitLooseLine(lines.first())
         val idxRoster = hdr.indexOfFirst { it.equals("roster", true) || it.equals("rosterNumber", true) }
         val idxName   = hdr.indexOfFirst { it.equals("name", true) }
         val idxPhone  = hdr.indexOfFirst { it.equals("phone", true) }
         val idxEmail  = hdr.indexOfFirst { it.equals("email", true) }
-        val idxBye    = hdr.indexOfFirst { it.equals("isBye", true) }
+        val idxBye    = hdr.indexOfFirst { it.equals("isBye", true) }   // optional column
 
         if (idxRoster < 0 || idxName < 0) return 0
 
@@ -93,9 +91,10 @@ class PlayersRepoV2(private val ctx: Context) {
             val phone = parts.getOrNull(idxPhone)?.trim().takeIf { !it.isNullOrBlank() }
             val email = parts.getOrNull(idxEmail)?.trim().takeIf { !it.isNullOrBlank() }
 
-            val isBye = parts.getOrNull(idxBye)?.trim()?.let {
+            val isByeFromCol = parts.getOrNull(idxBye)?.trim()?.let {
                 it.equals("true", true) || it == "1" || it.equals("yes", true) || it.equals("y", true)
-            } ?: false
+            }
+            val isBye = isByeFromCol ?: name.trim().startsWith("bye", ignoreCase = true)
 
             PlayerRow(
                 roster = roster,
@@ -110,13 +109,15 @@ class PlayersRepoV2(private val ctx: Context) {
         return rows.size
     }
 
+
     private fun ensureHeader() {
-        if (!file.exists() || file.length() == 0L) {
-            file.writeText(header() + "\n")
+        file.parentFile?.mkdirs()
+        if (!file.exists()) {
+            file.writeText("roster,name,phone,email\n")
         }
     }
 
-    private fun header(): String = "roster,name,phone,email,isBye"
+    private fun header(): String = "roster,name,phone,email"
 
     private fun toCsvLine(r: PlayerRow): String {
         fun esc(s: String): String =
@@ -128,14 +129,18 @@ class PlayersRepoV2(private val ctx: Context) {
             r.roster.toString(),
             esc(r.name),
             r.phone?.let { esc(it) } ?: "",
-            r.email?.let { esc(it) } ?: "",
-            r.isBye.toString()
+            r.email?.let { esc(it) } ?: ""
         ).joinToString(",")
     }
 
+    private fun escape(s: String): String =
+        if (s.contains(",") || s.contains("\"") || s.contains("\n"))
+            "\"" + s.replace("\"", "\"\"") + "\""
+        else s
+
     private fun parseLine(line: String): PlayerRow? {
         val parts = splitCsvLine(line)
-        if (parts.size < 5) return null
+        if (parts.size < 4) return null
 
         fun intOrNull(s: String) = s.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
         fun boolLoose(s: String) = s.trim().lowercase() in setOf("true","t","1","yes","y")
@@ -144,7 +149,10 @@ class PlayersRepoV2(private val ctx: Context) {
         val name = parts[1].trim().ifEmpty { "Player $roster" }
         val phone = parts[2].trim().ifEmpty { null }
         val email = parts[3].trim().ifEmpty { null }
-        val isBye = boolLoose(parts[4])
+
+        val isBye =
+            parts.getOrNull(4)?.let { boolLoose(it) }
+                ?: name.trim().startsWith("bye", ignoreCase = true)
 
         return PlayerRow(
             roster = roster,
@@ -162,18 +170,15 @@ class PlayersRepoV2(private val ctx: Context) {
         var i = 0
         while (i < line.length) {
             val c = line[i]
-            if (c == '"') {
-                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                    sb.append('"')
-                    i++
-                } else {
-                    inQuotes = !inQuotes
+            when {
+                c == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> {
+                    sb.append('"'); i++
                 }
-            } else if (c == ',' && !inQuotes) {
-                out.add(sb.toString())
-                sb.setLength(0)
-            } else {
-                sb.append(c)
+                c == '"' -> inQuotes = !inQuotes
+                c == ',' && !inQuotes -> {
+                    out.add(sb.toString()); sb.setLength(0)
+                }
+                else -> sb.append(c)
             }
             i++
         }

@@ -325,7 +325,7 @@ fun AdminImportPlayersScreen(
                     OutlinedButton(onClick = onBack) { Text("Back") }
                 }
 
-                Text("Choose a CSV file with header: roster,name,phone,email,isBye")
+                Text("Choose a CSV file with header: rosterNumber,name,phone,email")
 
                 Button(
                     onClick = { picker.launch(arrayOf("text/*", "text/csv", "application/csv")) },
