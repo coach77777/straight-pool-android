@@ -664,7 +664,7 @@ fun ScorerV2Screen(
 // ────────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun MatchHistoryScreen(
+fun MatchHistoryScreenLegacy(
     onBack: () -> Unit
 ) {
     val ctx = LocalContext.current

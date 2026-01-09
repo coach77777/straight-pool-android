@@ -1,7 +1,7 @@
 package com.rsstraightpoolscorer.app.ui.admin
 
-import com.rsstraightpoolscorer.app.db.MatchEntity
 import com.rsstraightpoolscorer.app.data.PlayerRow
+import com.rsstraightpoolscorer.app.db.MatchEntity
 
 object CsvExports {
 

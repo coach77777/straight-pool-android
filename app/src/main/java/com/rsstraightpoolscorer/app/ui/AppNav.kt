@@ -4,27 +4,27 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.rsstraightpoolscorer.app.scorer.MatchHistoryScreen
 import com.rsstraightpoolscorer.app.scorer.ScorerV2Screen
 import com.rsstraightpoolscorer.app.scorer.ScorerViewModel
+import com.rsstraightpoolscorer.app.ui.admin.AdminEditMatchScreen
+import com.rsstraightpoolscorer.app.ui.admin.AdminEditPlayerScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminExportPlayersScreen
+import com.rsstraightpoolscorer.app.ui.admin.AdminExportsScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminGateScreen
+import com.rsstraightpoolscorer.app.ui.admin.AdminImportMatchesScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminImportPlayersScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminMenuScreen
-import com.rsstraightpoolscorer.app.ui.admin.AdminEditPlayerScreen
+import com.rsstraightpoolscorer.app.ui.admin.AdminPlayerMatchesScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminPlayersScreen
 import com.rsstraightpoolscorer.app.ui.admin.AdminSettingsScreen
+import com.rsstraightpoolscorer.app.ui.admin.MatchHistoryScreen
 import com.rsstraightpoolscorer.app.ui.breakintro.BreakIntroScreen
 import com.rsstraightpoolscorer.app.ui.contacts.ContactsScreen
 import com.rsstraightpoolscorer.app.ui.help.HelpSpottingScreen
 import com.rsstraightpoolscorer.app.ui.setup.SetupScreen
 import com.rsstraightpoolscorer.app.ui.start.StartScreen
-import com.rsstraightpoolscorer.app.ui.stats.StandingsScreen
 import com.rsstraightpoolscorer.app.ui.stats.PlayerStatsScreen
-import com.rsstraightpoolscorer.app.ui.admin.AdminPlayerMatchesScreen
-import com.rsstraightpoolscorer.app.ui.admin.AdminExportsScreen
-import com.rsstraightpoolscorer.app.ui.admin.AdminEditMatchScreen
-import com.rsstraightpoolscorer.app.ui.admin.AdminImportMatchesScreen
+import com.rsstraightpoolscorer.app.ui.stats.StandingsScreen
 
 @Composable
 fun AppNav(vm: ScorerViewModel) {
@@ -101,7 +101,7 @@ fun AppNav(vm: ScorerViewModel) {
         }
 
         composable("match_history") {
-            MatchHistoryScreen(onBack = goBackOrStart)
+            com.rsstraightpoolscorer.app.ui.admin.MatchHistoryScreen(onBack = goBackOrStart)
         }
 
         composable("help") {
