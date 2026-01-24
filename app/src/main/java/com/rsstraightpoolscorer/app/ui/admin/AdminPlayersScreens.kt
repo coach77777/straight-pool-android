@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,18 +35,107 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.rsstraightpoolscorer.app.data.PlayerRow
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.PaddingValues
+
+private val PillShape = RoundedCornerShape(999.dp)
+
+private object ActionColors {
+    val call = Color(0xFF2E7D32)   // green
+    val text = Color(0xFFC62828)   // red
+    val email = Color(0xFF1565C0)  // blue
+    val edit = Color(0xFF6A1B9A)   // purple
+    val on = Color.White
+}
+
+@Composable
+private fun PillActionButton(
+    label: String,
+    bg: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = PillShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = bg,
+            contentColor = ActionColors.on,
+            disabledContainerColor = bg.copy(alpha = 0.35f),
+            disabledContentColor = ActionColors.on.copy(alpha = 0.65f)
+        ),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
+            fontSize = 13.sp
+        )
+    }
+}
+
+@Composable
+private fun ActionRow4(
+    canCallOrText: Boolean,
+    canEmail: Boolean,
+    enabledEdit: Boolean,
+    onCall: () -> Unit,
+    onText: () -> Unit,
+    onEmail: () -> Unit,
+    onEdit: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        PillActionButton(
+            label = "Call",
+            bg = ActionColors.call,
+            enabled = canCallOrText,
+            onClick = onCall,
+            modifier = Modifier.weight(1f)
+        )
+        PillActionButton(
+            label = "Text",
+            bg = ActionColors.text,
+            enabled = canCallOrText,
+            onClick = onText,
+            modifier = Modifier.weight(1f)
+        )
+        PillActionButton(
+            label = "Email",
+            bg = ActionColors.email,
+            enabled = canEmail,
+            onClick = onEmail,
+            modifier = Modifier.weight(1f)
+        )
+        PillActionButton(
+            label = "Edit",
+            bg = ActionColors.edit,
+            enabled = enabledEdit,
+            onClick = onEdit,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
 
 @Composable
 fun AdminPlayersScreen(
@@ -65,25 +156,20 @@ fun AdminPlayersScreen(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refresh()
-            }
+            if (event == Lifecycle.Event.ON_RESUME) refresh()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val q = query.trim().lowercase()
-
     val filtered = players
         .filter { p ->
-            if (q.isEmpty()) true
-            else p.name.lowercase().contains(q) || p.roster.toString().contains(q)
+            q.isEmpty() || p.name.lowercase().contains(q) || p.roster.toString().contains(q)
         }
-        .sortedWith(compareBy({ it.name.trim().lowercase() }, { it.roster }))
+        .sortedBy { it.roster }
 
     Scaffold { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
@@ -146,49 +232,49 @@ private fun PlayerRowCard(
     val ctx = LocalContext.current
 
     fun openDial(phone: String) {
-        val i = Intent(Intent.ACTION_DIAL).apply { data = Uri.parse("tel:$phone") }
-        ctx.startActivity(i)
+        ctx.startActivity(Intent(Intent.ACTION_DIAL).apply { data = Uri.parse("tel:$phone") })
     }
 
     fun openSms(phone: String) {
-        val i = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:$phone") }
-        ctx.startActivity(i)
+        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:$phone") })
     }
 
     fun openEmail(email: String) {
-        val i = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("mailto:$email") }
-        ctx.startActivity(i)
+        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("mailto:$email") })
     }
 
+    val canCallOrText = !p.phone.isNullOrBlank() && !p.isBye
+    val canEmail = !p.email.isNullOrBlank() && !p.isBye
+    val canEdit = !p.isBye
+
     Surface(tonalElevation = 1.dp) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val nameLine =
+                if (p.isBye) "#${p.roster} ${p.name} (BYE)"
+                else "#${p.roster} ${p.name}"
+
             Text(
-                text = if (p.isBye) "${p.name} (BYE)" else p.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                text = nameLine,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { p.phone?.let { openDial(it) } },
-                    enabled = !p.phone.isNullOrBlank() && !p.isBye,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Call") }
-
-                OutlinedButton(
-                    onClick = { p.phone?.let { openSms(it) } },
-                    enabled = !p.phone.isNullOrBlank() && !p.isBye,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Text") }
-
-                OutlinedButton(
-                    onClick = { p.email?.let { openEmail(it) } },
-                    enabled = !p.email.isNullOrBlank() && !p.isBye,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Email") }
-
-                OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) { Text("Edit") }
-            }
+            ActionRow4(
+                canCallOrText = canCallOrText,
+                canEmail = canEmail,
+                enabledEdit = canEdit,
+                onCall = { p.phone?.let { openDial(it) } },
+                onText = { p.phone?.let { openSms(it) } },
+                onEmail = { p.email?.let { openEmail(it) } },
+                onEdit = onEdit
+            )
         }
     }
 }
@@ -302,12 +388,10 @@ fun AdminImportPlayersScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-
         try {
             val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
             val n = repo.replaceFromCsvText(text)
             scope.launch { snackbarHostState.showSnackbar("Imported $n players", duration = SnackbarDuration.Short) }
-
             onBack()
         } catch (e: Exception) {
             scope.launch { snackbarHostState.showSnackbar("Import failed: ${e.message}", duration = SnackbarDuration.Long) }
@@ -388,5 +472,3 @@ fun AdminExportPlayersScreen(
         }
     }
 }
-
-

@@ -14,15 +14,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val f = java.io.File(filesDir, "remote/players.csv")
-        android.util.Log.d("Seed", "players exists=${f.exists()} size=${f.length()}")
-
         // Seed CSVs into /files/remote/ so the app never crashes on first launch
-        // Seed CSVs into /files/remote/
         SeedData.copyAssetIfMissing(this, "remote/players.csv", "players.csv")
         SeedData.copyAssetIfMissing(this, "remote/matches_3.csv", "matches_3.csv")
         SeedData.copyAssetIfMissing(this, "remote/schedule.csv", "schedule.csv")
         SeedData.copyAssetIfMissing(this, "remote/weeks_extracted.csv", "weeks_extracted.csv")
+
+        // Optional debug log AFTER seeding
+        val f = java.io.File(filesDir, "remote/players.csv")
+        android.util.Log.d("Seed", "players exists=${f.exists()} size=${f.length()}")
 
         setContent {
             val vm: ScorerViewModel = viewModel()
@@ -32,4 +32,5 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 

@@ -113,7 +113,7 @@ class PlayersRepoV2(private val ctx: Context) {
     private fun ensureHeader() {
         file.parentFile?.mkdirs()
         if (!file.exists()) {
-            file.writeText("roster,name,phone,email\n")
+            file.writeText("rosterNumber,name,phone,email\n")
         }
     }
 
@@ -140,6 +140,7 @@ class PlayersRepoV2(private val ctx: Context) {
 
     private fun parseLine(line: String): PlayerRow? {
         val parts = splitCsvLine(line)
+
         if (parts.size < 4) return null
 
         fun intOrNull(s: String) = s.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
@@ -149,10 +150,7 @@ class PlayersRepoV2(private val ctx: Context) {
         val name = parts[1].trim().ifEmpty { "Player $roster" }
         val phone = parts[2].trim().ifEmpty { null }
         val email = parts[3].trim().ifEmpty { null }
-
-        val isBye =
-            parts.getOrNull(4)?.let { boolLoose(it) }
-                ?: name.trim().startsWith("bye", ignoreCase = true)
+        val isBye = if (parts.size >= 5) boolLoose(parts[4]) else name.startsWith("bye", ignoreCase = true)
 
         return PlayerRow(
             roster = roster,

@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -26,11 +28,81 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rsstraightpoolscorer.app.data.PlayerRow
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.foundation.layout.PaddingValues
+
+private val PillShape = RoundedCornerShape(999.dp)
+
+private object ActionColors {
+    val call = Color(0xFF2E7D32)   // green
+    val text = Color(0xFFC62828)   // red
+    val email = Color(0xFF1565C0)  // blue
+    val edit = Color(0xFF6A1B9A)   // purple (not used in contacts, but shared palette)
+    val on = Color.White
+}
+
+@Composable
+private fun PillActionButton(
+    label: String,
+    bg: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = PillShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = bg,
+            contentColor = ActionColors.on,
+            disabledContainerColor = bg.copy(alpha = 0.35f),
+            disabledContentColor = ActionColors.on.copy(alpha = 0.65f)
+        ),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+        modifier = modifier.height(44.dp)
+    ) {
+        Text(
+            text = label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
+            fontSize = 13.sp
+        )
+    }
+}
+
+@Composable
+private fun ActionRow3(
+    canCallOrText: Boolean,
+    canEmail: Boolean,
+    onCall: () -> Unit,
+    onText: () -> Unit,
+    onEmail: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        PillActionButton("Call", ActionColors.call, canCallOrText, onCall, Modifier.weight(1f))
+        PillActionButton("Text", ActionColors.text, canCallOrText, onText, Modifier.weight(1f))
+        PillActionButton("Email", ActionColors.email, canEmail, onEmail, Modifier.weight(1f))
+
+        // Empty 4th slot so widths match the Admin 4-button row
+        Spacer(Modifier.weight(1f).height(44.dp))
+    }
+}
 
 @Composable
 fun ContactsScreen(onBack: () -> Unit) {
@@ -46,31 +118,34 @@ fun ContactsScreen(onBack: () -> Unit) {
         players = repo.readAll()
     }
 
-    LaunchedEffect(Unit) {
-        refresh()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    LaunchedEffect(Unit) { refresh() }
 
     val q = query.trim().lowercase()
-    val filtered = players.filter { p ->
-        q.isEmpty() || p.name.lowercase().contains(q) || p.roster.toString().contains(q)
-    }
+    val filtered = players
+        .filter { p ->
+            q.isEmpty() || p.name.lowercase().contains(q) || p.roster.toString().contains(q)
+        }
+        .sortedBy { it.roster }
 
     fun dial(phone: String) {
-        ctx.startActivity(Intent(Intent.ACTION_DIAL).apply {
-            data = Uri.parse("tel:$phone")
-        })
+        ctx.startActivity(Intent(Intent.ACTION_DIAL).apply { data = Uri.parse("tel:$phone") })
     }
 
     fun sms(phone: String) {
-        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("smsto:$phone")
-        })
+        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("smsto:$phone") })
     }
 
     fun email(addr: String) {
-        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:$addr")
-        })
+        ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("mailto:$addr") })
     }
 
     Surface {
@@ -129,38 +204,31 @@ private fun ContactCard(
     onText: () -> Unit,
     onEmail: () -> Unit
 ) {
+    val canCallOrText = !p.phone.isNullOrBlank()
+    val canEmail = !p.email.isNullOrBlank()
+
     Surface(tonalElevation = 1.dp) {
         Column(
-            Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = p.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                text = "#${p.roster} ${p.name}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onCall,
-                    enabled = !p.phone.isNullOrBlank(),
-                    modifier = Modifier.weight(1f)
-                ) { Text("Call") }
-
-                OutlinedButton(
-                    onClick = onText,
-                    enabled = !p.phone.isNullOrBlank(),
-                    modifier = Modifier.weight(1f)
-                ) { Text("Text") }
-
-                Button(
-                    onClick = onEmail,
-                    enabled = !p.email.isNullOrBlank(),
-                    modifier = Modifier.weight(1f)
-                ) { Text("Email") }
-            }
+            ActionRow3(
+                canCallOrText = canCallOrText,
+                canEmail = canEmail,
+                onCall = onCall,
+                onText = onText,
+                onEmail = onEmail
+            )
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -18,13 +19,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.rsstraightpoolscorer.app.data.LeagueMatch
 import com.rsstraightpoolscorer.app.data.MatchesRepository
@@ -57,12 +62,33 @@ fun AdminPlayerMatchesScreen(
 
     val rows = matches.sortedBy { it.week }
 
+    val labelWidth = 72.dp
+    val green = Color(0xFF2E7D32)
+    val red = Color(0xFFC62828)
+
+    fun isBye(m: LeagueMatch) = m.status.equals("bye", ignoreCase = true)
+    fun isPlayed(m: LeagueMatch) = m.status.equals("played", ignoreCase = true)
+    fun isScheduled(m: LeagueMatch) = m.status.equals("scheduled", ignoreCase = true)
+
     Surface {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
-                    Text("Admin: Player Matches", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("$roster. $playerName")
+                    Text(
+                        text = "Admin: Player Matches",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "#$roster  $playerName",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
                 }
                 OutlinedButton(onClick = onBack) { Text("Back") }
             }
@@ -75,44 +101,154 @@ fun AdminPlayerMatchesScreen(
             }
 
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 rows.forEach { m ->
                     val oppRoster = if (m.aRoster == roster) m.bRoster else m.aRoster
                     val oppName = nameFor(oppRoster)
 
-                    val scoreLine = when {
-                        m.aScore == null || m.bScore == null -> "—"
-                        m.aRoster == roster -> "${m.aScore} - ${m.bScore}"
-                        else -> "${m.bScore} - ${m.aScore}"
-                    }
+                    val a = m.aScore
+                    val b = m.bScore
+                    val haveScore = (a != null && b != null)
 
-                    val statusText = when (m.status.lowercase()) {
-                        "played" -> "PLAYED"
-                        "scheduled" -> "SCHEDULED"
-                        "refund" -> "REFUND"
+                    val myScore = if (!haveScore) null else if (m.aRoster == roster) a else b
+                    val oppScore = if (!haveScore) null else if (m.aRoster == roster) b else a
+
+                    val didWin = if (myScore == null || oppScore == null) null else myScore > oppScore
+                    val didLose = if (myScore == null || oppScore == null) null else myScore < oppScore
+
+                    val playedText = when {
+                        isBye(m) -> "BYE"
+                        isPlayed(m) -> "PLAYED"
+                        isScheduled(m) -> "SCHEDULED"
                         else -> m.status.uppercase()
                     }
 
-                    val countedText = if (m.countsForStandings) "COUNTED" else "NOT COUNTED"
+                    val countedWord = if (m.countsForStandings) "COUNTED" else "NOT COUNTED"
+
+                    val playedColor = when {
+                        isBye(m) -> Color.Unspecified
+                        isPlayed(m) -> green
+                        isScheduled(m) -> red
+                        else -> Color.Unspecified
+                    }
+
+                    val countedColor = when {
+                        isBye(m) -> Color.Unspecified
+                        m.countsForStandings -> green
+                        else -> red
+                    }
 
                     ElevatedCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onEditMatch(m.week, m.aRoster, m.bRoster) }
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                            Text("Week ${m.week}  vs  $oppRoster. $oppName", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(6.dp))
-                            Text("Score: $scoreLine")
-                            Text("Status: $statusText   $countedText")
-                            if (!m.note.isNullOrBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text("Note: ${m.note}")
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Week line
+                            Text(
+                                text = "Week ${m.week}  vs  #$oppRoster  $oppName",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+
+                            // Score row (aligned)
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "Score:",
+                                    modifier = Modifier.width(labelWidth),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+
+                                Text(
+                                    text = buildAnnotatedString {
+                                        if (!haveScore) {
+                                            append("—")
+                                        } else {
+                                            val myColor = when {
+                                                didWin == true -> green
+                                                didLose == true -> red
+                                                else -> Color.Unspecified
+                                            }
+                                            val oppColor = when {
+                                                didWin == true -> red
+                                                didLose == true -> green
+                                                else -> Color.Unspecified
+                                            }
+
+                                            withStyle(SpanStyle(color = myColor, fontWeight = FontWeight.SemiBold)) {
+                                                append(myScore.toString())
+                                            }
+                                            append(" - ")
+                                            withStyle(SpanStyle(color = oppColor, fontWeight = FontWeight.SemiBold)) {
+                                                append(oppScore.toString())
+                                            }
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("Tap to edit", style = MaterialTheme.typography.bodySmall)
+
+                            // Status row (aligned)
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "Status:",
+                                    modifier = Modifier.width(labelWidth),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+
+                                Text(
+                                    text = buildAnnotatedString {
+                                        withStyle(SpanStyle(color = playedColor, fontWeight = FontWeight.SemiBold)) {
+                                            append(playedText)
+                                        }
+                                        append("   ")
+                                        withStyle(SpanStyle(color = countedColor, fontWeight = FontWeight.SemiBold)) {
+                                            append(countedWord)
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+
+                            // Note (aligned)
+                            if (!m.note.isNullOrBlank()) {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "Note:",
+                                        modifier = Modifier.width(labelWidth),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = m.note!!,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(2.dp))
+
+                            // Tap to edit (aligned + subtle)
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Spacer(Modifier.width(labelWidth))
+                                Text(
+                                    text = "Tap to edit",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Unspecified
+                                )
+                            }
                         }
                     }
                 }
@@ -120,5 +256,3 @@ fun AdminPlayerMatchesScreen(
         }
     }
 }
-
-
