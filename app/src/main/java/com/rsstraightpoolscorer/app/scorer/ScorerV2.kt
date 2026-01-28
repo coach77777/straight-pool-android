@@ -68,6 +68,12 @@ import com.rsstraightpoolscorer.app.data.MatchHistoryRow
 // Coroutines
 import kotlinx.coroutines.launch
 
+import com.rsstraightpoolscorer.app.db.AppDatabase
+import com.rsstraightpoolscorer.app.db.MatchEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+
 // ────────────────────────────────────────────────────────────────────────────────
 // Domain
 // ────────────────────────────────────────────────────────────────────────────────
@@ -349,6 +355,42 @@ class ScorerViewModel : ViewModel() {
         game = endTurnNow(g, hadActivity = true)
     }
 
+    suspend fun saveMatchPendingToRoom(ctx: android.content.Context) {
+        val g = game
+        if (g.winnerIndex == null) return
+
+        val a = g.players[0]
+        val b = g.players[1]
+        val aId = a.id ?: return
+        val bId = b.id ?: return
+
+        fun weekToIntOrNull(key: String?): Int? {
+            if (key.isNullOrBlank()) return null
+            val digits = key.filter { it.isDigit() }
+            return digits.toIntOrNull()
+        }
+
+        val week = weekToIntOrNull(g.weekKey) ?: return
+
+        val entity = MatchEntity(
+            week = week,
+            dateMmDd = null,              // ok to leave null; import provides it
+            aRoster = aId,
+            bRoster = bId,
+            aScore = a.score,
+            bScore = b.score,
+            status = "played",
+            note = "PENDING",
+            countsForStandings = false     // pending admin approval
+        )
+
+        withContext(Dispatchers.IO) {
+            val dao = AppDatabase.get(ctx).matchDao()
+            dao.upsertAll(listOf(entity))
+        }
+    }
+
+
 
     fun finishMatch() {
         val g = game
@@ -400,6 +442,51 @@ class ScorerViewModel : ViewModel() {
             )
         )
     }
+
+    suspend fun submitMatchPendingToRoom(ctx: android.content.Context) {
+        val g = game
+        if (g.winnerIndex == null) return
+
+        fun weekToIntOrNull(key: String?): Int? {
+            if (key.isNullOrBlank()) return null
+            val digits = key.filter { it.isDigit() }
+            return digits.toIntOrNull()
+        }
+
+        val week = weekToIntOrNull(g.weekKey) ?: return
+
+        val a = g.players[0]
+        val b = g.players[1]
+        val r1 = a.id ?: return
+        val r2 = b.id ?: return
+
+        val dao = AppDatabase.get(ctx).matchDao()
+
+        withContext(Dispatchers.IO) {
+            // Find scheduled row for this matchup (either order)
+            val existing = dao.getOneEitherOrder(week, r1, r2)
+
+            // If it exists, preserve its stored order + date
+            val aRoster = existing?.aRoster ?: r1
+            val bRoster = existing?.bRoster ?: r2
+            val dateMmDd = existing?.dateMmDd
+
+            val updated = com.rsstraightpoolscorer.app.db.MatchEntity(
+                week = week,
+                dateMmDd = dateMmDd,
+                aRoster = aRoster,
+                bRoster = bRoster,
+                aScore = if (aRoster == r1) a.score else b.score,
+                bScore = if (bRoster == r2) b.score else a.score,
+                status = "played",
+                note = "PENDING",
+                countsForStandings = false
+            )
+
+            dao.upsertAll(listOf(updated))
+        }
+    }
+
 
     private fun endTurnNow(g: GameState, hadActivity: Boolean): GameState {
         val nextInning = if (g.atTableIndex == 1) g.innings + 1 else g.innings
@@ -630,11 +717,12 @@ fun ScorerV2Screen(
                                 onClick = {
                                     vm.finalizeTurnIfNeeded()
                                     vm.finishMatch()
-                                    vm.saveMatchToHistory(ctx)
 
                                     scope.launch {
+                                        vm.saveMatchPendingToRoom(ctx)
+
                                         snackbarHostState.showSnackbar(
-                                            "Congrats! Match recorded.",
+                                            "Submitted (pending admin approval).",
                                             duration = SnackbarDuration.Short
                                         )
                                         onBack?.invoke()
