@@ -186,11 +186,15 @@ fun AdminEditMatchScreen(
 
                 Button(
                     onClick = {
+                        val finalNote =
+                            if (status == "played" && counted) null
+                            else note.trim().ifBlank { null }
+
                         val updated = row.copy(
                             aScore = parseScore(aScoreStr),
                             bScore = parseScore(bScoreStr),
                             status = status.trim(),
-                            note = note.trim().ifBlank { null },
+                            note = finalNote,
                             countsForStandings = counted
                         )
                         scope.launch {
