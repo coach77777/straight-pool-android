@@ -13,3 +13,16 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Firebase Admin SDK keys
+admin/secrets/
+firebase-admin*.json
+serviceAccountKey.json
+*.serviceAccount.json
+# Firebase
+app/google-services.json
+
+# Build outputs
+*.aab
+
+# Kotlin / IDE noise
+.kotlin/

@@ -3,7 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("kotlin-kapt")
+
+    alias(libs.plugins.google.services)
 }
+
 
 android {
     namespace = "com.rsstraightpoolscorer.app"
@@ -13,8 +16,8 @@ android {
         applicationId = "com.rsstraightpoolscorer.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "8.0"
+        versionCode = 9
+        versionName = "9.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -31,6 +34,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -80,6 +84,15 @@ dependencies {
     kapt("androidx.room:room-compiler:2.6.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+// Firebase products
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-auth-ktx")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
 
 kapt {

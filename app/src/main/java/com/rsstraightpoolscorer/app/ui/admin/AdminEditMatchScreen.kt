@@ -10,13 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,16 +24,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.firebase.firestore.FirebaseFirestore
+import com.rsstraightpoolscorer.app.data.LeagueMatch
+import com.rsstraightpoolscorer.app.data.MatchesFirestoreRepo
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
-import com.rsstraightpoolscorer.app.db.AppDatabase
-import com.rsstraightpoolscorer.app.db.MatchEntity
-import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 fun AdminEditMatchScreen(
@@ -47,11 +44,10 @@ fun AdminEditMatchScreen(
     onBack: () -> Unit
 ) {
     val ctx = LocalContext.current
-    val dao = remember { AppDatabase.get(ctx).matchDao() }
-    val scope = rememberCoroutineScope()
     val playersRepo = remember { PlayersRepoV2(ctx) }
+    val fsRepo = remember { MatchesFirestoreRepo() }
 
-    var loaded by remember { mutableStateOf<MatchEntity?>(null) }
+    var loaded by remember { mutableStateOf<LeagueMatch?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     var aScoreStr by remember { mutableStateOf("") }
@@ -66,23 +62,42 @@ fun AdminEditMatchScreen(
     fun nameFor(rosterId: Int): String =
         playersRepo.readAll().firstOrNull { it.roster == rosterId }?.name ?: "#$rosterId"
 
-    LaunchedEffect(Unit) {
-        val row = dao.getOneEitherOrder(week, aRoster, bRoster)
-        if (row == null) {
-            error = "Match not found for Week $week ($aRoster vs $bRoster)."
-            loaded = null
+    fun parseScore(s: String): Int? = s.trim().toIntOrNull()
+
+    // Canonical doc id so we never depend on A/B ordering
+    val ra = min(aRoster, bRoster)
+    val rb = max(aRoster, bRoster)
+    val docId = "${week}_${ra}_${rb}"
+
+    LaunchedEffect(week, aRoster, bRoster) {
+        error = null
+        loaded = null
+
+        // If your repo has a direct get-by-id method later, use it.
+        // For now, reuse what you already have: getAllMatchesServer()
+        val all = fsRepo.getAllMatchesServer()
+
+        val match = all.firstOrNull { m ->
+            m.week == week && (
+                    (m.aRoster == aRoster && m.bRoster == bRoster) ||
+                            (m.aRoster == bRoster && m.bRoster == aRoster) ||
+                            // also allow canonical stored
+                            (m.aRoster == ra && m.bRoster == rb)
+                    )
+        }
+
+        if (match == null) {
+            error = "Match not found in Firestore for Week $week ($aRoster vs $bRoster)."
             return@LaunchedEffect
         }
 
-        loaded = row
-        aScoreStr = row.aScore?.toString() ?: ""
-        bScoreStr = row.bScore?.toString() ?: ""
-        status = row.status.ifBlank { "scheduled" }.lowercase()
-        note = row.note ?: ""
-        counted = row.countsForStandings
+        loaded = match
+        aScoreStr = match.aScore?.toString() ?: ""
+        bScoreStr = match.bScore?.toString() ?: ""
+        status = match.status.ifBlank { "scheduled" }.lowercase()
+        note = match.note ?: ""
+        counted = match.countsForStandings
     }
-
-    fun parseScore(s: String): Int? = s.trim().toIntOrNull()
 
     Surface {
         Column(
@@ -102,49 +117,44 @@ fun AdminEditMatchScreen(
                 OutlinedButton(onClick = onBack) { Text("Back") }
             }
 
-            val row = loaded
             if (error != null) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 return@Surface
             }
+
+            val row = loaded
             if (row == null) {
                 Text("Loading...")
                 return@Surface
             }
 
             Text("Week $week")
-            Text("${row.aRoster}. ${nameFor(row.aRoster)}  vs  ${row.bRoster}. ${nameFor(row.bRoster)}")
+            Text("$aRoster. ${nameFor(aRoster)}  vs  $bRoster. ${nameFor(bRoster)}")
 
             Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
                 value = aScoreStr,
                 onValueChange = { aScoreStr = it.filter { ch -> ch.isDigit() }.take(4) },
-                label = { Text("Score for ${row.aRoster}") },
+                label = { Text("Score for $aRoster") },
                 modifier = Modifier.fillMaxWidth()
             )
 
             OutlinedTextField(
                 value = bScoreStr,
                 onValueChange = { bScoreStr = it.filter { ch -> ch.isDigit() }.take(4) },
-                label = { Text("Score for ${row.bRoster}") },
+                label = { Text("Score for $bRoster") },
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Bulletproof dropdown: TextField + IconButton + DropdownMenu
+            // No icons. Button opens a dropdown.
             Column(Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = status.uppercase(),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Status") },
-                    trailingIcon = {
-                        IconButton(onClick = { statusExpanded = true }) {
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Open status menu")
-                        }
-                    },
+                OutlinedButton(
+                    onClick = { statusExpanded = true },
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    Text("Status: ${status.uppercase()}")
+                }
 
                 DropdownMenu(
                     expanded = statusExpanded,
@@ -186,21 +196,31 @@ fun AdminEditMatchScreen(
 
                 Button(
                     onClick = {
+                        val db = FirebaseFirestore.getInstance()
+
                         val finalNote =
                             if (status == "played" && counted) null
                             else note.trim().ifBlank { null }
 
-                        val updated = row.copy(
-                            aScore = parseScore(aScoreStr),
-                            bScore = parseScore(bScoreStr),
-                            status = status.trim(),
-                            note = finalNote,
-                            countsForStandings = counted
+                        val data = mapOf(
+                            "week" to week,
+                            "matchKey" to docId,
+                            "playerA_roster" to ra,
+                            "playerB_roster" to rb,
+                            "scoreA" to parseScore(aScoreStr),
+                            "scoreB" to parseScore(bScoreStr),
+                            "status" to status.trim(),
+                            "note" to finalNote,
+                            "countsForStandings" to counted
                         )
-                        scope.launch {
-                            dao.update(updated)
-                            onBack()
-                        }
+
+                        db.collection("matches")
+                            .document(docId)
+                            .set(data)
+                            .addOnSuccessListener { onBack() }
+                            .addOnFailureListener { e ->
+                                error = "Save failed: ${e.message}"
+                            }
                     }
                 ) { Text("Save") }
             }

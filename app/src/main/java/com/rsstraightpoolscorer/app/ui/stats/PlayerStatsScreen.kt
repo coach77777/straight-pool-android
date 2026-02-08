@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.rsstraightpoolscorer.app.data.LeagueMatch
-import com.rsstraightpoolscorer.app.data.MatchesRepository
+import com.rsstraightpoolscorer.app.data.MatchesFirestoreRepo
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 
 @Composable
@@ -41,27 +41,34 @@ fun PlayerStatsScreen(
 ) {
     val ctx = LocalContext.current
     val playersRepo = remember { PlayersRepoV2(ctx) }
-    val matchesRepo = remember { MatchesRepository(ctx) }
+    val fsRepo = remember { MatchesFirestoreRepo() }
 
     var playerName by remember { mutableStateOf("") }
     var allPlayers by remember { mutableStateOf(playersRepo.readAll()) }
-    var matches by remember { mutableStateOf<List<LeagueMatch>>(emptyList()) }
+    var allMatches by remember { mutableStateOf<List<LeagueMatch>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         allPlayers = playersRepo.readAll()
         playerName = allPlayers.firstOrNull { it.roster == roster }?.name ?: "Player #$roster"
 
-        matchesRepo.ensureSeededFromAssets("remote/matches_3.csv")
-        matches = matchesRepo.getForPlayer(roster)
+        // Firestore is source of truth:
+        allMatches = fsRepo.getAllMatchesServer()
     }
 
     fun nameFor(rosterId: Int): String =
         allPlayers.firstOrNull { it.roster == rosterId }?.name ?: "#$rosterId"
 
-    val rows = matches.sortedBy { it.week }
+    // Player-specific rows from Firestore
+    val rows = remember(allMatches, roster) {
+        allMatches
+            .filter { it.aRoster == roster || it.bRoster == roster }
+            .sortedBy { it.week }
+    }
 
     // Summary: Count only played + counted
-    val countedPlayed = rows.filter { it.status.equals("played", ignoreCase = true) && it.countsForStandings }
+    val countedPlayed = rows.filter {
+        it.status.equals("played", ignoreCase = true) && it.countsForStandings
+    }
 
     val wins = countedPlayed.count { m ->
         val a = m.aScore
@@ -196,7 +203,6 @@ fun PlayerStatsScreen(
                                 maxLines = 1
                             )
 
-                            // Score row (aligned with Status row)
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = "Score:",
@@ -234,7 +240,6 @@ fun PlayerStatsScreen(
                                 )
                             }
 
-                            // Status row (aligned with Score row)
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = "Status:",
@@ -257,7 +262,6 @@ fun PlayerStatsScreen(
                                 )
                             }
 
-                            // Note row (aligned too)
                             if (!m.note.isNullOrBlank()) {
                                 Row(modifier = Modifier.fillMaxWidth()) {
                                     Text(

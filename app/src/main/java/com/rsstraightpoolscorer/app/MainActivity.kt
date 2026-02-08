@@ -15,10 +15,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // Seed CSVs into /files/remote/ so the app never crashes on first launch
+
         SeedData.copyAssetIfMissing(this, "remote/players.csv", "players.csv")
-        SeedData.copyAssetIfMissing(this, "remote/matches_3.csv", "matches_3.csv")
-        SeedData.copyAssetIfMissing(this, "remote/schedule.csv", "schedule.csv")
-        SeedData.copyAssetIfMissing(this, "remote/weeks_extracted.csv", "weeks_extracted.csv")
+
+        SeedData.copyAssetIfMissing(this, "remote_OFF/schedule.csv", "schedule.csv")
+        SeedData.copyAssetIfMissing(this, "remote_OFF/weeks_extracted.csv", "weeks_extracted.csv")
+        SeedData.copyAssetIfMissing(this, "remote_OFF/matches_3_OFF.csv", "matches_3.csv")
 
         // Optional debug log AFTER seeding
         val f = java.io.File(filesDir, "remote/players.csv")

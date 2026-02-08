@@ -18,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,15 +29,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.rsstraightpoolscorer.app.data.LeagueMatch
-import com.rsstraightpoolscorer.app.data.MatchesRepository
+import com.rsstraightpoolscorer.app.data.MatchesFirestoreRepo
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 import com.rsstraightpoolscorer.app.data.RosterPlayer
 import com.rsstraightpoolscorer.app.standings.calculateStandings
-import androidx.compose.ui.text.style.TextOverflow
-
 
 @Composable
 fun StandingsScreen(
@@ -44,27 +44,36 @@ fun StandingsScreen(
     onPlayerClick: (Int) -> Unit = {}
 ) {
     val ctx = LocalContext.current
-
     val playersRepo = remember { PlayersRepoV2(ctx) }
-    val matchesRepo = remember { MatchesRepository(ctx) }
+    val fsRepo = remember { MatchesFirestoreRepo() }
 
     var roster by remember { mutableStateOf<List<RosterPlayer>>(emptyList()) }
     var matches by remember { mutableStateOf<List<LeagueMatch>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
-        matchesRepo.ensureSeededFromAssets("remote/matches_3.csv")
-        matches = matchesRepo.getAll()
-    }
+    var fsInfo by remember { mutableStateOf("FS: loading...") }
 
+    // One clean init
     LaunchedEffect(Unit) {
+        // 1) Load roster (local players)
         roster = playersRepo.readAll()
             .filter { !it.isBye }
             .map { RosterPlayer(playerId = it.roster, name = it.name) }
             .sortedBy { it.playerId }
+
+        // 2) Load matches (Firestore)
+        val fsMatches = fsRepo.getAllMatchesServer()
+        matches = fsMatches
+
+        // 3) Debug label (so we always know what we got)
+        fsInfo = "FS matches=${fsMatches.size}"
     }
 
-    val rows = remember(roster, matches) {
-        calculateStandings(roster, matches)
+    val countedMatches = remember(matches) {
+        matches.count { it.isPlayed && it.countsForStandings }
+    }
+
+    val rows by remember(roster, matches) {
+        derivedStateOf { calculateStandings(roster, matches) }
     }
 
     Surface {
@@ -88,16 +97,20 @@ fun StandingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // Cleaner info line:
+            // FS matches=630   Counted: 123
             Text(
                 text = buildAnnotatedString {
-                    append("Counted matches: ")
+                    append(fsInfo)
+                    append("   ")
+                    append("Counted: ")
                     withStyle(
                         SpanStyle(
                             color = Color(0xFF1565C0),
                             fontWeight = FontWeight.SemiBold
                         )
                     ) {
-                        append(matches.count { it.isPlayed && it.countsForStandings }.toString())
+                        append(countedMatches.toString())
                     }
                 },
                 style = MaterialTheme.typography.bodyMedium
@@ -127,8 +140,6 @@ fun StandingsScreen(
                                 .fillMaxWidth()
                                 .padding(12.dp)
                         ) {
-
-                            // EXACT format you want:
                             // "#14  Eric Roberts"
                             Text(
                                 text = "#${r.roster}  ${r.name}",
@@ -140,8 +151,7 @@ fun StandingsScreen(
 
                             Spacer(Modifier.height(6.dp))
 
-                            // EXACT format you want:
-                            // "W: 10   L: 6   GP: 16" (with colors)
+                            // "W: 10   L: 6   GP: 16"
                             Text(
                                 text = buildAnnotatedString {
                                     withStyle(

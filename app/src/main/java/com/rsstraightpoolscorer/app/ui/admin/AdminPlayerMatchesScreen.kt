@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.rsstraightpoolscorer.app.data.LeagueMatch
-import com.rsstraightpoolscorer.app.data.MatchesRepository
+import com.rsstraightpoolscorer.app.data.MatchesFirestoreRepo
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 
 @Composable
@@ -43,18 +43,19 @@ fun AdminPlayerMatchesScreen(
 ) {
   val ctx = LocalContext.current
   val playersRepo = remember { PlayersRepoV2(ctx) }
-  val matchesRepo = remember { MatchesRepository(ctx) }
+    val fsRepo = remember { MatchesFirestoreRepo() }
+    var matches by remember { mutableStateOf<List<LeagueMatch>>(emptyList()) }
 
   var playerName by remember { mutableStateOf("") }
   var allPlayers by remember { mutableStateOf(playersRepo.readAll()) }
-  var matches by remember { mutableStateOf<List<LeagueMatch>>(emptyList()) }
 
-  LaunchedEffect(Unit) {
+
+  LaunchedEffect(roster) {
     allPlayers = playersRepo.readAll()
     playerName = allPlayers.firstOrNull { it.roster == roster }?.name ?: "Player #$roster"
 
-    matchesRepo.ensureSeededFromAssets("remote/matches_3.csv")
-    matches = matchesRepo.getForPlayer(roster)
+      val fsMatches = fsRepo.getAllMatchesServer()
+      matches = fsMatches.filter { it.aRoster == roster || it.bRoster == roster }
   }
 
   fun nameFor(rosterId: Int): String =
