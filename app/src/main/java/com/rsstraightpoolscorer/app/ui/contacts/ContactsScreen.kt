@@ -114,20 +114,24 @@ fun ContactsScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var players by remember { mutableStateOf(emptyList<PlayerRow>()) }
 
-    fun refresh() {
-        players = repo.readAll()
+    fun refreshPlayers() {
+        val list = repo.readAll()
+        players = list
+
+        val p5 = list.firstOrNull { it.roster == 5 }
+        android.util.Log.d("PLAYERS_UI", "Contacts refresh -> roster5=${p5?.name} (count=${list.size})")
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refresh()
+            if (event == Lifecycle.Event.ON_RESUME) refreshPlayers()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(Unit) { refreshPlayers() }
 
     val q = query.trim().lowercase()
     val filtered = players
@@ -147,6 +151,7 @@ fun ContactsScreen(onBack: () -> Unit) {
     fun email(addr: String) {
         ctx.startActivity(Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("mailto:$addr") })
     }
+
 
     Surface {
         Column(

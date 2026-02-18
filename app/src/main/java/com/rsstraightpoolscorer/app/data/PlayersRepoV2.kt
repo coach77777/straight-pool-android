@@ -2,6 +2,9 @@ package com.rsstraightpoolscorer.app.data
 
 import android.content.Context
 import java.io.File
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Source
+import kotlinx.coroutines.tasks.await
 
 data class PlayerRow(
     val roster: Int,
@@ -187,5 +190,43 @@ class PlayersRepoV2(private val ctx: Context) {
     private fun splitLooseLine(line: String): List<String> {
         val delim = if (line.contains('\t')) '\t' else ','
         return line.split(delim).map { it.trim().trim('"') }
+
     }
-}
+        suspend fun syncFromFirestore(
+            firestore: FirebaseFirestore,
+            forceServer: Boolean = true
+        ): Int {
+            val source = if (forceServer) Source.SERVER else Source.DEFAULT
+
+            val snap = firestore.collection("players")
+                .get(source)
+                .await()
+
+            val rows = snap.documents.mapNotNull { doc ->
+                val roster = (doc.getLong("rosterNumber") ?: doc.getLong("roster"))?.toInt()
+                    ?: return@mapNotNull null
+
+                val name = doc.getString("name")?.trim().orEmpty()
+                val phone = doc.getString("phone")?.trim().takeIf { !it.isNullOrBlank() }
+                val email = doc.getString("email")?.trim().takeIf { !it.isNullOrBlank() }
+
+                val isBye = doc.getBoolean("isBye")
+                    ?: name.startsWith("bye", ignoreCase = true)
+
+                PlayerRow(
+                    roster = roster,
+                    name = if (name.isBlank()) "Player $roster" else name,
+                    phone = phone,
+                    email = email,
+                    isBye = isBye
+                )
+            }.sortedBy { it.roster }
+
+            // Authoritative overwrite so old player #5 cannot survive
+            replaceAll(rows)
+            return rows.size
+        }
+
+
+    }
+

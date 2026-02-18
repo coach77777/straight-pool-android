@@ -1,5 +1,7 @@
 package com.rsstraightpoolscorer.app.scorer
 
+import android.content.Context
+
 // Animations
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -59,20 +61,19 @@ import androidx.compose.ui.unit.dp
 
 // Lifecycle
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 // Data
 import com.rsstraightpoolscorer.app.data.MatchHistoryRepoV2
 import com.rsstraightpoolscorer.app.data.MatchHistoryRow
-
-// Coroutines
-import kotlinx.coroutines.launch
-
+import com.rsstraightpoolscorer.app.data.PlayerRow
+import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 import com.rsstraightpoolscorer.app.db.AppDatabase
 import com.rsstraightpoolscorer.app.db.MatchEntity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
+// Coroutines
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Domain
@@ -108,25 +109,20 @@ data class GameState(
         Player(name = "Player B")
     ),
 
-    // Opening/scoring phase
-
     val phase: GamePhase = GamePhase.Opening,
     val breakerIndex: Int = 0,
 
-    // 14.1
     val rackNumber: Int = 1,
     val ballsDownInRack: Int = 0,
     val rackBallsRemaining: Int = 15,
     val rackMode: RackMode = RackMode.Opening15,
 
-    // per-turn counters & log
     val inningCounter: Int = 0,
     val currentBalls: Int = 0,
     val currentFouls: Int = 0,
     val currentBreakFouls: Int = 0,
     val log: List<InningEntry> = emptyList(),
 
-    // header + winner
     val weekKey: String? = null,
     val weekLabel: String? = null,
     val winnerIndex: Int? = null,
@@ -147,6 +143,16 @@ enum class Action {
 // ────────────────────────────────────────────────────────────────────────────────
 
 class ScorerViewModel : ViewModel() {
+
+    // Full roster list (contacts/admin/etc)
+    var rosterPlayers by mutableStateOf<List<PlayerRow>>(emptyList())
+        private set
+
+    fun reloadPlayers(context: Context) {
+        val repo = PlayersRepoV2(context.applicationContext)
+        rosterPlayers = repo.readAll()
+        android.util.Log.d("SYNC", "reloadPlayers rosterPlayers=${rosterPlayers.size}")
+    }
 
     data class MatchResult(
         val weekKey: String?,
@@ -187,14 +193,12 @@ class ScorerViewModel : ViewModel() {
     fun undo() { if (undoStack.isNotEmpty()) game = undoStack.removeAt(undoStack.lastIndex) }
 
     fun startMatch(
-
         target: Int,
         aId: Int?, aName: String,
         bId: Int?, bName: String,
         weekKey: String?, weekLabel: String?,
         lagWinnerId: Int,
         winnerBreaks: Boolean
-
     ) {
         val aRoster = aId
         val bRoster = bId
@@ -203,7 +207,7 @@ class ScorerViewModel : ViewModel() {
         val lagWinnerIndex = when (lagWinnerId) {
             aRoster -> 0
             bRoster -> 1
-            else -> return // lag winner must be one of the two selected players
+            else -> return
         }
 
         val breaker = if (winnerBreaks) lagWinnerIndex else 1 - lagWinnerIndex
@@ -235,8 +239,6 @@ class ScorerViewModel : ViewModel() {
         undoStack.clear()
     }
 
-    // ── Opening helpers (used by BreakIntroScreen) ──
-
     fun openingLegalBreak() {
         val opp = (game.breakerIndex + 1) % 2
         game = lockTargetIfNeeded(
@@ -251,7 +253,6 @@ class ScorerViewModel : ViewModel() {
         )
     }
 
-    // Legal break with a called ball made: breaker continues
     fun openingLegalBreakWithBall() {
         pushUndo()
         val brk = game.breakerIndex
@@ -298,7 +299,6 @@ class ScorerViewModel : ViewModel() {
         val before = p.foulsInARow
 
         if (before >= 2) {
-            // 3rd successive breaking foul: -15 only, reset streak, re-rack; still Opening
             val cleared = p.copy(score = p.score - 15, foulsInARow = 0)
             game = lockTargetIfNeeded(
                 game.copy(
@@ -313,7 +313,6 @@ class ScorerViewModel : ViewModel() {
                 hadActivity = true
             )
         } else {
-            // 1st/2nd breaking foul: -2; wait for opponent choice
             val after = p.copy(score = p.score - 2, foulsInARow = before + 1)
             game = lockTargetIfNeeded(
                 game.copy(
@@ -355,7 +354,7 @@ class ScorerViewModel : ViewModel() {
         game = endTurnNow(g, hadActivity = true)
     }
 
-    suspend fun saveMatchPendingToRoom(ctx: android.content.Context) {
+    suspend fun saveMatchPendingToRoom(ctx: Context) {
         val g = game
         if (g.winnerIndex == null) return
 
@@ -374,14 +373,14 @@ class ScorerViewModel : ViewModel() {
 
         val entity = MatchEntity(
             week = week,
-            dateMmDd = null,              // ok to leave null; import provides it
+            dateMmDd = null,
             aRoster = aId,
             bRoster = bId,
             aScore = a.score,
             bScore = b.score,
             status = "played",
             note = "PENDING",
-            countsForStandings = false     // pending admin approval
+            countsForStandings = false
         )
 
         withContext(Dispatchers.IO) {
@@ -389,8 +388,6 @@ class ScorerViewModel : ViewModel() {
             dao.upsertAll(listOf(entity))
         }
     }
-
-
 
     fun finishMatch() {
         val g = game
@@ -408,7 +405,7 @@ class ScorerViewModel : ViewModel() {
         )
     }
 
-    fun saveMatchToHistory(ctx: android.content.Context) {
+    fun saveMatchToHistory(ctx: Context) {
         val g = game
         if (g.winnerIndex == null) return
 
@@ -443,7 +440,7 @@ class ScorerViewModel : ViewModel() {
         )
     }
 
-    suspend fun submitMatchPendingToRoom(ctx: android.content.Context) {
+    suspend fun submitMatchPendingToRoom(ctx: Context) {
         val g = game
         if (g.winnerIndex == null) return
 
@@ -463,15 +460,13 @@ class ScorerViewModel : ViewModel() {
         val dao = AppDatabase.get(ctx).matchDao()
 
         withContext(Dispatchers.IO) {
-            // Find scheduled row for this matchup (either order)
             val existing = dao.getOneEitherOrder(week, r1, r2)
 
-            // If it exists, preserve its stored order + date
             val aRoster = existing?.aRoster ?: r1
             val bRoster = existing?.bRoster ?: r2
             val dateMmDd = existing?.dateMmDd
 
-            val updated = com.rsstraightpoolscorer.app.db.MatchEntity(
+            val updated = MatchEntity(
                 week = week,
                 dateMmDd = dateMmDd,
                 aRoster = aRoster,
@@ -486,7 +481,6 @@ class ScorerViewModel : ViewModel() {
             dao.upsertAll(listOf(updated))
         }
     }
-
 
     private fun endTurnNow(g: GameState, hadActivity: Boolean): GameState {
         val nextInning = if (g.atTableIndex == 1) g.innings + 1 else g.innings
@@ -532,7 +526,9 @@ class ScorerViewModel : ViewModel() {
                     ballsDownInRack = 0,
                     rackBallsRemaining = 15,
                     rackMode = RackMode.Opening15,
-                    currentBalls = 0, currentFouls = 0, currentBreakFouls = 0
+                    currentBalls = 0,
+                    currentFouls = 0,
+                    currentBreakFouls = 0
                 ),
                 hadActivity = true
             )
@@ -556,14 +552,10 @@ class ScorerViewModel : ViewModel() {
         fun Player.clearFouls() = copy(foulsInARow = 0)
 
         game = when (action) {
-
-            // Score freezes once winner exists, but we still count balls in currentBalls/log for high run.
             Action.POCKET_BALL -> {
                 val cur = g.players[i]
-
                 val matchOver = (g.winnerIndex != null) || g.postWin
                 val newScore = if (matchOver) cur.score else (cur.score + 1)
-
                 val updated = cur.copy(score = newScore, foulsInARow = 0)
 
                 val newBallsDown = g.ballsDownInRack + 1
@@ -614,7 +606,7 @@ class ScorerViewModel : ViewModel() {
 
 @Composable
 fun ScorerV2Screen(
-    vm: ScorerViewModel = viewModel(),
+    vm: ScorerViewModel,
     onBack: (() -> Unit)? = null,
     onHelp: (() -> Unit)? = null,
     onHistory: (() -> Unit)? = null
@@ -626,10 +618,7 @@ fun ScorerV2Screen(
     val scope = rememberCoroutineScope()
 
     MaterialTheme {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) }
-        ) { padding ->
-
+        Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
             Surface(Modifier.fillMaxSize().padding(padding)) {
                 Column(
                     modifier = Modifier
@@ -638,7 +627,6 @@ fun ScorerV2Screen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Title + actions
                     Column(Modifier.fillMaxWidth()) {
                         Text(
                             "Straight Pool Scoring TEST",
@@ -653,19 +641,17 @@ fun ScorerV2Screen(
                             horizontalArrangement = Arrangement.End
                         ) {
                             onHistory?.let {
-                                OutlinedButton(onClick = it) { Text("onHistory is ${if (onHistory == null) "NULL" else "SET"}") }
+                                OutlinedButton(onClick = it) { Text("History") }
                                 Spacer(Modifier.width(8.dp))
                             }
                             onHelp?.let {
                                 OutlinedButton(onClick = it) { Text("Help") }
                                 Spacer(Modifier.width(8.dp))
                             }
-
                             onBack?.let { OutlinedButton(onClick = it) { Text("Back") } }
                         }
                     }
 
-                    // Scoreboard
                     ScoreBoard(
                         players = g.players,
                         atTable = g.atTableIndex,
@@ -674,14 +660,13 @@ fun ScorerV2Screen(
                         ballsDownInRack = g.ballsDownInRack,
                         rackNumber = g.rackNumber,
                         rackMode = g.rackMode,
-                        onSetAtTable = { /* optional */ },
+                        onSetAtTable = { },
                         weekKey = g.weekKey,
                         weekLabel = g.weekLabel,
                         winnerIndex = g.winnerIndex,
                         breakerIndex = g.breakerIndex
                     )
 
-                    // Game Over row (only after someone hits target)
                     if (g.winnerIndex != null) {
                         Row(
                             Modifier.fillMaxWidth(),
@@ -698,7 +683,6 @@ fun ScorerV2Screen(
                                 },
                                 modifier = Modifier.weight(1f)
                             ) { Text("Continue") }
-
 
                             OutlinedButton(
                                 onClick = {
@@ -720,7 +704,6 @@ fun ScorerV2Screen(
 
                                     scope.launch {
                                         vm.saveMatchPendingToRoom(ctx)
-
                                         snackbarHostState.showSnackbar(
                                             "Submitted (pending admin approval).",
                                             duration = SnackbarDuration.Short
@@ -733,7 +716,6 @@ fun ScorerV2Screen(
                         }
                     }
 
-                    // Controls remain enabled (post-win high-run allowed)
                     TurnControls(
                         onPocket = { vm.apply(Action.POCKET_BALL) },
                         onFoul = { vm.apply(Action.FOUL) },
@@ -765,10 +747,7 @@ fun MatchHistoryScreenLegacy(
     val scope = rememberCoroutineScope()
 
     MaterialTheme {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) }
-        ) { padding ->
-
+        Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
             Surface(Modifier.fillMaxSize().padding(padding)) {
                 Column(
                     modifier = Modifier
@@ -844,7 +823,7 @@ fun ScoreBoard(
     weekLabel: String? = null,
     winnerIndex: Int? = null,
     breakerIndex: Int
-){
+) {
     val rackLabel =
         if (rackNumber >= 2 && rackMode == RackMode.Continuous14Plus1 && ballsDownInRack == 0)
             "14 racked + 1 break ball"
@@ -959,9 +938,8 @@ fun ScoreBoard(
                 }
             }
         }
-        }
     }
-
+}
 
 @Composable
 fun TurnControls(
