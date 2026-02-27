@@ -1,8 +1,6 @@
 package com.rsstraightpoolscorer.app.scorer
 
 import android.content.Context
-
-// Animations
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -10,11 +8,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-
-// Foundation + Layout
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,8 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-
-// Material3
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -38,8 +33,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-
-// Runtime / UI
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -51,26 +44,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
-// Lifecycle
 import androidx.lifecycle.ViewModel
-
-// Data
 import com.rsstraightpoolscorer.app.data.MatchHistoryRepoV2
 import com.rsstraightpoolscorer.app.data.MatchHistoryRow
 import com.rsstraightpoolscorer.app.data.PlayerRow
 import com.rsstraightpoolscorer.app.data.PlayersRepoV2
 import com.rsstraightpoolscorer.app.db.AppDatabase
 import com.rsstraightpoolscorer.app.db.MatchEntity
-
-// Coroutines
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,7 +73,7 @@ data class Player(
 
 data class InningEntry(
     val number: Int,
-    val playerIndex: Int,   // 0 = A, 1 = B
+    val playerIndex: Int,   // 0 = player1, 1 = player2
     val balls: Int,
     val fouls: Int,
     val breakFouls: Int,
@@ -102,29 +87,43 @@ data class GameState(
     val targetScore: Int = 125,
     val targetLocked: Boolean = false,
 
+    // Match flow
     val innings: Int = 1,
+    val turnsInCurrentInning: Int = 0, // 0 or 1 (iOS parity; kept for now)
+
     val atTableIndex: Int = 0,
+
+    // Who is "top of inning" (left card). Bottom of inning is the other player (right card).
+    val inningStartIndex: Int = 0,
+
+    // Who is breaking the current opening/rerack
+    val breakerIndex: Int = 0,
+
     val players: List<Player> = listOf(
-        Player(name = "Player A"),
-        Player(name = "Player B")
+        Player(name = "Player 1"),
+        Player(name = "Player 2")
     ),
 
     val phase: GamePhase = GamePhase.Opening,
-    val breakerIndex: Int = 0,
 
+    // Rack / balls
     val rackNumber: Int = 1,
     val ballsDownInRack: Int = 0,
     val rackBallsRemaining: Int = 15,
     val rackMode: RackMode = RackMode.Opening15,
 
+    // Per-turn counters for log snapshots
     val inningCounter: Int = 0,
     val currentBalls: Int = 0,
     val currentFouls: Int = 0,
     val currentBreakFouls: Int = 0,
     val log: List<InningEntry> = emptyList(),
 
+    // Match meta
     val weekKey: String? = null,
     val weekLabel: String? = null,
+
+    // Winner
     val winnerIndex: Int? = null,
     val postWin: Boolean = false
 )
@@ -138,20 +137,20 @@ enum class Action {
     END_TURN
 }
 
+data class RerackEvent(val offenderIndex: Int)
+
 // ────────────────────────────────────────────────────────────────────────────────
 // ViewModel
 // ────────────────────────────────────────────────────────────────────────────────
 
 class ScorerViewModel : ViewModel() {
 
-    // Full roster list (contacts/admin/etc)
     var rosterPlayers by mutableStateOf<List<PlayerRow>>(emptyList())
         private set
 
     fun reloadPlayers(context: Context) {
         val repo = PlayersRepoV2(context.applicationContext)
         rosterPlayers = repo.readAll()
-        android.util.Log.d("SYNC", "reloadPlayers rosterPlayers=${rosterPlayers.size}")
     }
 
     data class MatchResult(
@@ -164,6 +163,31 @@ class ScorerViewModel : ViewModel() {
     )
 
     val history = mutableStateListOf<MatchResult>()
+
+    var game by mutableStateOf(GameState())
+        private set
+
+    var rerackEvent by mutableStateOf<RerackEvent?>(null)
+        private set
+
+    fun consumeRerackEvent() {
+        rerackEvent = null
+    }
+
+    private val undoStack = mutableStateListOf<GameState>()
+
+    private fun pushUndo() {
+        undoStack.add(game)
+    }
+
+    fun canUndo(): Boolean = undoStack.isNotEmpty()
+
+    fun undo() {
+        if (undoStack.isNotEmpty()) {
+            game = undoStack.removeAt(undoStack.lastIndex)
+            rerackEvent = null // hide overlay if it was showing
+        }
+    }
 
     private fun calcHighRun(g: GameState): Int =
         g.log.groupBy { it.playerIndex }
@@ -184,13 +208,6 @@ class ScorerViewModel : ViewModel() {
 
     private fun lockTargetIfNeeded(g: GameState, hadActivity: Boolean = true): GameState =
         if (!g.targetLocked && hadActivity) g.copy(targetLocked = true) else g
-
-    var game by mutableStateOf(GameState())
-        private set
-
-    private val undoStack = mutableStateListOf<GameState>()
-    private fun pushUndo() { undoStack.add(game) }
-    fun undo() { if (undoStack.isNotEmpty()) game = undoStack.removeAt(undoStack.lastIndex) }
 
     fun startMatch(
         target: Int,
@@ -221,14 +238,21 @@ class ScorerViewModel : ViewModel() {
             ),
             weekKey = weekKey,
             weekLabel = weekLabel,
+
             phase = GamePhase.Opening,
+
             breakerIndex = breaker,
+            inningStartIndex = breaker, // top of inning is the breaker
+            atTableIndex = breaker,     // breaker starts until break result changes it
+
+            innings = 1,
+            turnsInCurrentInning = 0,
+
             rackNumber = 1,
             ballsDownInRack = 0,
             rackBallsRemaining = 15,
             rackMode = RackMode.Opening15,
-            innings = 1,
-            atTableIndex = breaker,
+
             winnerIndex = null,
             postWin = false,
             currentBalls = 0,
@@ -236,15 +260,23 @@ class ScorerViewModel : ViewModel() {
             currentBreakFouls = 0,
             log = emptyList()
         )
+
         undoStack.clear()
+        rerackEvent = null
     }
 
+    // ───────── Opening break flow called by BreakIntroScreen ─────────
+
     fun openingLegalBreak() {
-        val opp = (game.breakerIndex + 1) % 2
+        pushUndo()
+        val brk = game.breakerIndex
+        val opp = (brk + 1) % 2
+
         game = lockTargetIfNeeded(
             game.copy(
                 phase = GamePhase.Scoring,
-                atTableIndex = opp,
+                atTableIndex = opp,        // opponent now shoots (bottom of inning)
+                turnsInCurrentInning = 1,  // break turn is over
                 currentBalls = 0,
                 currentFouls = 0,
                 currentBreakFouls = 0
@@ -256,10 +288,12 @@ class ScorerViewModel : ViewModel() {
     fun openingLegalBreakWithBall() {
         pushUndo()
         val brk = game.breakerIndex
+
         game = lockTargetIfNeeded(
             game.copy(
                 phase = GamePhase.Scoring,
-                atTableIndex = brk,
+                atTableIndex = brk,        // breaker continues (still top of inning)
+                turnsInCurrentInning = 0,
                 currentBalls = 0,
                 currentFouls = 0,
                 currentBreakFouls = 0
@@ -284,7 +318,8 @@ class ScorerViewModel : ViewModel() {
             game.copy(
                 players = game.players.toMutableList().also { it[brk] = updatedBreaker },
                 phase = GamePhase.Scoring,
-                atTableIndex = opp,
+                atTableIndex = opp,        // opponent shoots (bottom of inning)
+                turnsInCurrentInning = 1,  // break turn is over
                 currentBalls = 0,
                 currentFouls = 0,
                 currentBreakFouls = 0
@@ -294,6 +329,7 @@ class ScorerViewModel : ViewModel() {
     }
 
     fun openingBreakFoul() {
+        pushUndo()
         val i = game.breakerIndex
         val p = game.players[i]
         val before = p.foulsInARow
@@ -306,6 +342,7 @@ class ScorerViewModel : ViewModel() {
                     phase = GamePhase.Opening,
                     ballsDownInRack = 0,
                     rackBallsRemaining = 15,
+                    turnsInCurrentInning = 0,
                     currentBalls = 0,
                     currentFouls = 0,
                     currentBreakFouls = 0
@@ -326,26 +363,32 @@ class ScorerViewModel : ViewModel() {
     }
 
     fun openingOpponentAcceptsTable() {
+        pushUndo()
         val opp = (game.breakerIndex + 1) % 2
         game = lockTargetIfNeeded(
             game.copy(
                 phase = GamePhase.Scoring,
-                atTableIndex = opp
+                atTableIndex = opp,        // opponent shoots
+                turnsInCurrentInning = 1   // break turn is over
             ),
             hadActivity = true
         )
     }
 
     fun openingForceRerack() {
+        pushUndo()
         game = game.copy(
             phase = GamePhase.Opening,
             ballsDownInRack = 0,
             rackBallsRemaining = 15,
             currentBalls = 0,
             currentFouls = 0,
-            currentBreakFouls = 0
+            currentBreakFouls = 0,
+            turnsInCurrentInning = 0
         )
     }
+
+    // ───────── End of opening break flow ─────────
 
     fun finalizeTurnIfNeeded() {
         val g = game
@@ -356,7 +399,7 @@ class ScorerViewModel : ViewModel() {
 
     suspend fun saveMatchPendingToRoom(ctx: Context) {
         val g = game
-        if (g.winnerIndex == null) return
+
 
         val a = g.players[0]
         val b = g.players[1]
@@ -407,7 +450,7 @@ class ScorerViewModel : ViewModel() {
 
     fun saveMatchToHistory(ctx: Context) {
         val g = game
-        if (g.winnerIndex == null) return
+
 
         val repo = MatchHistoryRepoV2(ctx)
 
@@ -440,50 +483,15 @@ class ScorerViewModel : ViewModel() {
         )
     }
 
-    suspend fun submitMatchPendingToRoom(ctx: Context) {
-        val g = game
-        if (g.winnerIndex == null) return
-
-        fun weekToIntOrNull(key: String?): Int? {
-            if (key.isNullOrBlank()) return null
-            val digits = key.filter { it.isDigit() }
-            return digits.toIntOrNull()
-        }
-
-        val week = weekToIntOrNull(g.weekKey) ?: return
-
-        val a = g.players[0]
-        val b = g.players[1]
-        val r1 = a.id ?: return
-        val r2 = b.id ?: return
-
-        val dao = AppDatabase.get(ctx).matchDao()
-
-        withContext(Dispatchers.IO) {
-            val existing = dao.getOneEitherOrder(week, r1, r2)
-
-            val aRoster = existing?.aRoster ?: r1
-            val bRoster = existing?.bRoster ?: r2
-            val dateMmDd = existing?.dateMmDd
-
-            val updated = MatchEntity(
-                week = week,
-                dateMmDd = dateMmDd,
-                aRoster = aRoster,
-                bRoster = bRoster,
-                aScore = if (aRoster == r1) a.score else b.score,
-                bScore = if (bRoster == r2) b.score else a.score,
-                status = "played",
-                note = "PENDING",
-                countsForStandings = false
-            )
-
-            dao.upsertAll(listOf(updated))
-        }
-    }
+    // ────────────────────────────────────────────────────────────────────────────────
+    // Turn / foul logic
+    // ────────────────────────────────────────────────────────────────────────────────
 
     private fun endTurnNow(g: GameState, hadActivity: Boolean): GameState {
-        val nextInning = if (g.atTableIndex == 1) g.innings + 1 else g.innings
+        val bottomIdx = (g.inningStartIndex + 1) % 2
+        val inningEndsNow = (g.atTableIndex == bottomIdx)
+
+        val nextInnings = if (inningEndsNow) g.innings + 1 else g.innings
 
         val newLog = if (hadActivity) {
             val delta = g.currentBalls - g.currentFouls - 2 * g.currentBreakFouls
@@ -498,8 +506,15 @@ class ScorerViewModel : ViewModel() {
         } else g.log
 
         return g.copy(
+            // inning number can change
+            innings = nextInnings,
+
+            // IMPORTANT: seats NEVER change here
+            inningStartIndex = g.inningStartIndex,
+
+            // shooter switches every turn
             atTableIndex = (g.atTableIndex + 1) % 2,
-            innings = nextInning,
+
             inningCounter = if (hadActivity) g.inningCounter + 1 else g.inningCounter,
             currentBalls = 0,
             currentFouls = 0,
@@ -508,7 +523,7 @@ class ScorerViewModel : ViewModel() {
         )
     }
 
-    private fun applyFoul(basePenalty: Int): GameState {
+    private fun applyFoul(penaltyThisFoul: Int): GameState {
         val g = game
         val i = g.atTableIndex
         val active = g.players[i]
@@ -518,22 +533,37 @@ class ScorerViewModel : ViewModel() {
         val beforeCount = active.foulsInARow
 
         return if (beforeCount >= 2) {
-            val cleared = active.withScore(-15).copy(foulsInARow = 0)
-            lockTargetIfNeeded(
+            val totalPenalty = 16
+            val cleared = active.withScore(-totalPenalty).copy(foulsInARow = 0)
+
+            val ng = lockTargetIfNeeded(
                 g.copy(
                     players = g.players.toMutableList().also { it[i] = cleared },
+
                     rackNumber = g.rackNumber + 1,
                     ballsDownInRack = 0,
                     rackBallsRemaining = 15,
                     rackMode = RackMode.Opening15,
+
+                    // Offender breaks again, and becomes top-of-inning for the new rack
+                    breakerIndex = i,
+                    inningStartIndex = i,
+                    atTableIndex = i,
+                    phase = GamePhase.Opening,
+
+                    turnsInCurrentInning = 0,
+
                     currentBalls = 0,
                     currentFouls = 0,
                     currentBreakFouls = 0
                 ),
                 hadActivity = true
             )
+
+            rerackEvent = RerackEvent(offenderIndex = i)
+            ng
         } else {
-            val after = active.withScore(-basePenalty).copy(foulsInARow = beforeCount + 1)
+            val after = active.withScore(-penaltyThisFoul).copy(foulsInARow = beforeCount + 1)
             val ng = g.copy(
                 players = g.players.toMutableList().also { it[i] = after },
                 currentFouls = g.currentFouls + 1
@@ -552,6 +582,7 @@ class ScorerViewModel : ViewModel() {
         fun Player.clearFouls() = copy(foulsInARow = 0)
 
         game = when (action) {
+
             Action.POCKET_BALL -> {
                 val cur = g.players[i]
                 val matchOver = (g.winnerIndex != null) || g.postWin
@@ -582,9 +613,9 @@ class ScorerViewModel : ViewModel() {
                 lockTargetIfNeeded(next, hadActivity = true)
             }
 
-            Action.FOUL_BALL_DROPPED -> applyFoul(basePenalty = 1)
-            Action.FOUL -> applyFoul(basePenalty = 1)
-            Action.DELIBERATE_FOUL -> applyFoul(basePenalty = 16)
+            Action.FOUL_BALL_DROPPED -> applyFoul(penaltyThisFoul = 1)
+            Action.FOUL -> applyFoul(penaltyThisFoul = 1)
+            Action.DELIBERATE_FOUL -> applyFoul(penaltyThisFoul = 16)
 
             Action.SAFETY -> {
                 val cleared = active.clearFouls()
@@ -594,7 +625,9 @@ class ScorerViewModel : ViewModel() {
 
             Action.END_TURN -> {
                 val hadActivity = (g.currentBalls + g.currentFouls + g.currentBreakFouls) > 0
-                lockTargetIfNeeded(endTurnNow(g, hadActivity), hadActivity)
+                val cleared = active.copy(foulsInARow = 0)
+                val ng = g.copy(players = g.players.toMutableList().also { it[i] = cleared })
+                lockTargetIfNeeded(endTurnNow(ng, hadActivity), hadActivity)
             }
         }.let { checkWinner(it) }
     }
@@ -607,9 +640,11 @@ class ScorerViewModel : ViewModel() {
 @Composable
 fun ScorerV2Screen(
     vm: ScorerViewModel,
+    onGoToBreakIntro: () -> Unit,
     onBack: (() -> Unit)? = null,
     onHelp: (() -> Unit)? = null,
     onHistory: (() -> Unit)? = null
+
 ) {
     val g = vm.game
     val ctx = LocalContext.current
@@ -617,112 +652,125 @@ fun ScorerV2Screen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val rerackEvent = vm.rerackEvent
+
     MaterialTheme {
         Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
             Surface(Modifier.fillMaxSize().padding(padding)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Column(Modifier.fillMaxWidth()) {
-                        Text(
-                            "Straight Pool Scoring TEST",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
+                Box(Modifier.fillMaxSize()) {
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(
+                                "Straight Pool Scoring",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                OutlinedButton(
+                                    onClick = { vm.undo() },
+                                    enabled = vm.canUndo() && g.winnerIndex == null
+                                ) { Text("Undo") }
+                                Spacer(Modifier.width(8.dp))
+
+
+                                onHelp?.let {
+                                    OutlinedButton(onClick = it) { Text("Help") }
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                onBack?.let { OutlinedButton(onClick = it) { Text("Back") } }
+                            }
+                        }
+
+                        ScoreBoard(
+                            players = g.players,
+                            atTable = g.atTableIndex,
+                            inningStartIndex = g.inningStartIndex,
+                            innings = g.innings,
+                            ballsDownInRack = g.ballsDownInRack,
+                            rackNumber = g.rackNumber,
+                            rackMode = g.rackMode,
+                            winnerIndex = g.winnerIndex
                         )
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            onHistory?.let {
-                                OutlinedButton(onClick = it) { Text("History") }
-                                Spacer(Modifier.width(8.dp))
+                        if (g.winnerIndex != null) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                "Continue scoring for high run",
+                                                duration = SnackbarDuration.Short
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Continue") }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                "Discarded (not saved)",
+                                                duration = SnackbarDuration.Short
+                                            )
+                                            onBack?.invoke()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Discard") }
+
+                                Button(
+                                    onClick = {
+                                        vm.finalizeTurnIfNeeded()
+                                        vm.finishMatch()
+
+                                        scope.launch {
+                                            vm.saveMatchPendingToRoom(ctx)
+                                            snackbarHostState.showSnackbar(
+                                                "Submitted (pending admin approval).",
+                                                duration = SnackbarDuration.Short
+                                            )
+                                            onBack?.invoke()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Finish Match") }
                             }
-                            onHelp?.let {
-                                OutlinedButton(onClick = it) { Text("Help") }
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            onBack?.let { OutlinedButton(onClick = it) { Text("Back") } }
                         }
+
+                        TurnControls(
+                            onPocket = { vm.apply(Action.POCKET_BALL) },
+                            onFoul = { vm.apply(Action.FOUL) },
+                            onDeliberate = { vm.apply(Action.DELIBERATE_FOUL) },
+                            onSafety = { vm.apply(Action.SAFETY) },
+                            onEndTurn = { vm.apply(Action.END_TURN) }
+                        )
                     }
 
-                    ScoreBoard(
-                        players = g.players,
-                        atTable = g.atTableIndex,
-                        innings = g.innings,
-                        rackRemaining = g.rackBallsRemaining,
-                        ballsDownInRack = g.ballsDownInRack,
-                        rackNumber = g.rackNumber,
-                        rackMode = g.rackMode,
-                        onSetAtTable = { },
-                        weekKey = g.weekKey,
-                        weekLabel = g.weekLabel,
-                        winnerIndex = g.winnerIndex,
-                        breakerIndex = g.breakerIndex
-                    )
-
-                    if (g.winnerIndex != null) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Continue scoring for high run",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Continue") }
-
-                            OutlinedButton(
-                                onClick = {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Discarded (not saved)",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        onBack?.invoke()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Discard") }
-
-                            Button(
-                                onClick = {
-                                    vm.finalizeTurnIfNeeded()
-                                    vm.finishMatch()
-
-                                    scope.launch {
-                                        vm.saveMatchPendingToRoom(ctx)
-                                        snackbarHostState.showSnackbar(
-                                            "Submitted (pending admin approval).",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        onBack?.invoke()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Finish Match") }
-                        }
+                    if (rerackEvent != null) {
+                        RerackOverlay(
+                            onOk = {
+                                vm.consumeRerackEvent()
+                                onGoToBreakIntro()
+                            }
+                        )
                     }
-
-                    TurnControls(
-                        onPocket = { vm.apply(Action.POCKET_BALL) },
-                        onFoul = { vm.apply(Action.FOUL) },
-                        onDeliberate = { vm.apply(Action.DELIBERATE_FOUL) },
-                        onSafety = { vm.apply(Action.SAFETY) },
-                        onEndTurn = { vm.apply(Action.END_TURN) }
-                    )
                 }
             }
         }
@@ -730,76 +778,50 @@ fun ScorerV2Screen(
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// UI: Match History Viewer
+// UI: Overlay (RE-RACK)
 // ────────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun MatchHistoryScreenLegacy(
-    onBack: () -> Unit
-) {
-    val ctx = LocalContext.current
-    val repo = remember { MatchHistoryRepoV2(ctx) }
+private fun RerackOverlay(onOk: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Red.copy(alpha = 0.70f))
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "RE-RACK",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
 
-    var text by remember { mutableStateOf(repo.exportText()) }
+            Spacer(Modifier.height(16.dp))
 
-    val clipboard = LocalClipboardManager.current
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+            Text(
+                text = "3rd foul: −1 plus −15\nOffender breaks again",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
 
-    MaterialTheme {
-        Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
-            Surface(Modifier.fillMaxSize().padding(padding)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Match History", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        OutlinedButton(onClick = onBack) { Text("Back") }
-                    }
+            Spacer(Modifier.height(24.dp))
 
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                text = repo.exportText()
-                                scope.launch { snackbarHostState.showSnackbar("Refreshed", duration = SnackbarDuration.Short) }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Refresh") }
-
-                        OutlinedButton(
-                            onClick = {
-                                clipboard.setText(AnnotatedString(text))
-                                scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Copy") }
-
-                        Button(
-                            onClick = {
-                                repo.clearAll()
-                                text = repo.exportText()
-                                scope.launch { snackbarHostState.showSnackbar("Cleared", duration = SnackbarDuration.Short) }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Clear") }
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Column(Modifier.verticalScroll(rememberScrollState())) {
-                            Text(text)
-                        }
-                    }
-                }
+            Button(
+                onClick = onOk,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                Text("OK", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -813,22 +835,22 @@ fun MatchHistoryScreenLegacy(
 fun ScoreBoard(
     players: List<Player>,
     atTable: Int,
+    inningStartIndex: Int,
     innings: Int,
-    rackRemaining: Int,
     ballsDownInRack: Int,
     rackNumber: Int,
     rackMode: RackMode,
-    onSetAtTable: (Int) -> Unit,
-    weekKey: String? = null,
-    weekLabel: String? = null,
-    winnerIndex: Int? = null,
-    breakerIndex: Int
+    winnerIndex: Int? = null
 ) {
-    val rackLabel =
-        if (rackNumber >= 2 && rackMode == RackMode.Continuous14Plus1 && ballsDownInRack == 0)
-            "14 racked + 1 break ball"
+    val rackLine =
+        if (rackNumber == 1) "15 balls racked"
+        else if (rackNumber >= 2 && rackMode == RackMode.Continuous14Plus1 && ballsDownInRack == 0)
+            "14 balls racked + 1 break ball"
         else
-            "Rack balls remaining: ${15 - ballsDownInRack}"
+            "Rack balls remaining: ${(15 - ballsDownInRack).coerceAtLeast(0)}"
+
+    val ballsMadeThisRack = ballsDownInRack
+    val ballsOnTable = (15 - ballsDownInRack).coerceAtLeast(0)
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
@@ -841,37 +863,40 @@ fun ScoreBoard(
             )
         }
 
-        if (!weekLabel.isNullOrBlank() || !weekKey.isNullOrBlank()) {
+        Column {
             Text(
-                text = buildString {
-                    append("Week: ")
-                    if (!weekLabel.isNullOrBlank()) append(weekLabel)
-                    if (!weekKey.isNullOrBlank()) {
-                        if (!weekLabel.isNullOrBlank()) append("  •  ")
-                        append(weekKey)
-                    }
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                text = "Innings: $innings   •   Rack: $rackNumber",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = rackLine,
+                style = MaterialTheme.typography.bodyMedium
             )
         }
 
         Text(
-            text = "Innings: $innings   •   Rack: $rackNumber   •   $rackLabel",
-            style = MaterialTheme.typography.bodyMedium
+            text = "$ballsMadeThisRack balls made this rack",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
         )
 
+        Text(
+            text = "$ballsOnTable balls on table",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        // IMPORTANT: left card = top of inning, right card = bottom of inning
+        val leftIdx = inningStartIndex.coerceIn(0, players.lastIndex)
+        val rightIdx = (leftIdx + 1) % players.size
+        val order = listOf(leftIdx, rightIdx)
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-
-            val leftIdx = breakerIndex.coerceIn(0, players.lastIndex)
-            val rightIdx = (leftIdx + 1) % players.size
-            val order = listOf(leftIdx, rightIdx)
-
             order.forEach { index ->
                 val p = players[index]
 
                 val isAt = index == atTable
-                val twoFouls = isAt && p.foulsInARow >= 2
+                val twoFouls = (p.foulsInARow == 2)
 
                 val pulseTrans = rememberInfiniteTransition(label = "twoFoulsPulse")
                 val pulseScale by pulseTrans.animateFloat(
@@ -907,27 +932,29 @@ fun ScoreBoard(
                         .weight(1f)
                         .scale(pulseScale)
                         .border(3.dp, borderColor, RoundedCornerShape(12.dp))
-                        .clickable { onSetAtTable(index) }
                 ) {
                     Column(
                         Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = if (index == 0) "${p.name} (A)" else "${p.name} (B)",
+                            text = p.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = if (isAt) FontWeight.ExtraBold else FontWeight.Bold
                         )
+
                         Text(
                             text = "Score: ${p.score}",
                             style = MaterialTheme.typography.headlineSmall,
                             color = scoreColor,
                             textAlign = TextAlign.Start
                         )
+
                         Text("Fouls in a row: ${p.foulsInARow}")
+
                         if (twoFouls) {
                             Text(
-                                "Warning: 2 fouls — avoid the 3rd!",
+                                text = "2 Foul Warning",
                                 color = Color(0xFFFFA000),
                                 fontWeight = FontWeight.SemiBold
                             )

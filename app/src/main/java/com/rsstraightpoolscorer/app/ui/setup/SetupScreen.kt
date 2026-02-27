@@ -12,7 +12,7 @@ import com.rsstraightpoolscorer.app.data.loadMatchScheduleFromAssets
 import com.rsstraightpoolscorer.app.scorer.ScorerViewModel
 
 data class WeekEntry(val key: String, val label: String) // key like "Wk-1"
-
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 @Composable
 fun SetupScreen(
     vm: ScorerViewModel,
@@ -220,23 +220,30 @@ fun SetupScreen(
                         val a = aSel
                         val b = bSel
                         val lag = lagSel
-
                         if (a == null || b == null || lag == null) return@Button
 
-                        val aName = a.second.substringAfter("  ").trim()
-                        val bName = b.second.substringAfter("  ").trim()
+                        // Parse clean names
+                        val aNameRaw = a.second.substringAfter("  ").trim()
+                        val bNameRaw = b.second.substringAfter("  ").trim()
+
+                        // CANONICALIZE: always store lower roster as Player A (index 0)
+                        val (aId, aName, bId, bName) =
+                            if (a.first <= b.first) {
+                                Quad(a.first, aNameRaw, b.first, bNameRaw)
+                            } else {
+                                Quad(b.first, bNameRaw, a.first, aNameRaw)
+                            }
 
                         vm.startMatch(
                             target = t,
-                            aId = a.first, aName = aName,
-                            bId = b.first, bName = bName,
+                            aId = aId, aName = aName,
+                            bId = bId, bName = bName,
                             weekKey = wSel?.key, weekLabel = wSel?.label,
                             lagWinnerId = lag.first,
                             winnerBreaks = winnerBreaks
                         )
 
-                        // optional: navigate to break screen if your flow needs it
-                        onStart(t, a.first, aName, b.first, bName, wSel?.key, wSel?.label)
+                        onStart(t, aId, aName, bId, bName, wSel?.key, wSel?.label)
                     },
                     enabled = (aSel != null && bSel != null && lagSel != null && matchupWarning == null)
                 ) {

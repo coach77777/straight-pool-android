@@ -1,7 +1,16 @@
 package com.rsstraightpoolscorer.app.ui.breakintro
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -12,18 +21,21 @@ import com.rsstraightpoolscorer.app.scorer.ScorerViewModel
 @Composable
 fun BreakIntroScreen(
     vm: ScorerViewModel,
-    onStart: () -> Unit,   // ← this is the only “continue” callback
+    onStart: () -> Unit,
     onBack: () -> Unit
 ) {
     val g = vm.game
+    val safeBreakerIndex = g.breakerIndex.coerceIn(0, g.players.lastIndex)
 
     Column(
-        Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.Start
     ) {
         Text("Opening Break", style = MaterialTheme.typography.headlineSmall)
-        Text("Breaker: ${g.players[g.breakerIndex].name}")
+        Text("Breaker: ${g.players[safeBreakerIndex].name}")
 
         when (g.phase) {
             GamePhase.Opening -> {
@@ -31,26 +43,21 @@ fun BreakIntroScreen(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 1) Legal break (no ball) → opponent accepts the table
                     Button(
                         onClick = { vm.openingLegalBreak(); onStart() },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Legal break") }
 
-                    // 2) Legal break WITH called ball → breaker keeps shooting
                     Button(
                         onClick = { vm.openingLegalBreakWithBall(); onStart() },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Legal break (called ball)") }
 
                     Button(
-                        onClick = { vm.openingScratchOnLegalBreak() },
+                        onClick = { vm.openingScratchOnLegalBreak(); onStart() },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Scratch on legal break (−1)")
-                    }
+                    ) { Text("Scratch on legal break (−1)") }
 
-                    // 3) Breaking foul −2 → opponent chooses accept/rerack
                     OutlinedButton(
                         onClick = { vm.openingBreakFoul() },
                         modifier = Modifier.fillMaxWidth()
@@ -60,6 +67,7 @@ fun BreakIntroScreen(
 
             GamePhase.AwaitChoiceAfterBreakFoul -> {
                 Text("Opponent’s choice after the breaking foul:")
+
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -69,7 +77,6 @@ fun BreakIntroScreen(
                         modifier = Modifier.weight(1f)
                     ) { Text("Accept table (start)") }
 
-
                     OutlinedButton(
                         onClick = { vm.openingForceRerack() },
                         modifier = Modifier.weight(1f)
@@ -78,7 +85,9 @@ fun BreakIntroScreen(
             }
 
             GamePhase.Scoring -> {
-                Button(onClick = onStart) { Text("Continue to scoring") }
+                Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                    Text("Continue to scoring")
+                }
             }
         }
 

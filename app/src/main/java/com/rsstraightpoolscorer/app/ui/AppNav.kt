@@ -94,12 +94,17 @@ fun AppNav(vm: ScorerViewModel) {
         composable("scorer") {
             ScorerV2Screen(
                 vm = vm,
+                onGoToBreakIntro = {
+                    nav.navigate("break") {
+                        popUpTo("scorer") { inclusive = true }  // remove scorer so you land on break
+                        launchSingleTop = true
+                    }
+                },
                 onBack = goBackOrStart,
                 onHelp = { nav.navigate("help") },
                 onHistory = { nav.navigate("match_history") }
             )
         }
-
         composable("match_history") {
             com.rsstraightpoolscorer.app.ui.admin.MatchHistoryScreen(onBack = goBackOrStart)
         }
