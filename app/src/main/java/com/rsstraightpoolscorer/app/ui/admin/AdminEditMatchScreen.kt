@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -73,15 +74,12 @@ fun AdminEditMatchScreen(
         error = null
         loaded = null
 
-        // If your repo has a direct get-by-id method later, use it.
-        // For now, reuse what you already have: getAllMatchesServer()
         val all = fsRepo.getAllMatchesServer()
 
         val match = all.firstOrNull { m ->
             m.week == week && (
                     (m.aRoster == aRoster && m.bRoster == bRoster) ||
                             (m.aRoster == bRoster && m.bRoster == aRoster) ||
-                            // also allow canonical stored
                             (m.aRoster == ra && m.bRoster == rb)
                     )
         }
@@ -179,21 +177,30 @@ fun AdminEditMatchScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // APPROVED ROW (own line)  ✅ FIXED
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = if (counted) "Approved (Counted): YES" else "Approved (Counted): NO",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Switch(
-                        checked = counted,
-                        onCheckedChange = { counted = it }
-                    )
-                }
+                Text(
+                    text = if (counted) "Approved (Counted): YES" else "Approved (Counted): NO",
+                    fontWeight = FontWeight.SemiBold
+                )
 
+                Switch(
+                    checked = counted,
+                    onCheckedChange = { counted = it }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // SAVE BUTTON ROW (own line)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 Button(
                     onClick = {
                         val db = FirebaseFirestore.getInstance()
@@ -222,7 +229,9 @@ fun AdminEditMatchScreen(
                                 error = "Save failed: ${e.message}"
                             }
                     }
-                ) { Text("Save") }
+                ) {
+                    Text("Save")
+                }
             }
         }
     }
